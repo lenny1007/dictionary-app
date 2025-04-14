@@ -29,6 +29,7 @@ const specialCases: { [key: string]: string } = {
   '地': 'ㄉㄜ˙',
   '麼': 'ㄇㄜ˙',
   '個': 'ㄍㄜ˙',
+  '於': 'ㄩˊ',
 };
 
 const initialMap: { [key: string]: string } = {
@@ -54,7 +55,8 @@ const finalMap: { [key: string]: string } = {
   'ua': 'ㄨㄚ', 'uo': 'ㄨㄛ', 'uai': 'ㄨㄞ', 'ui': 'ㄨㄟ',
   'uan': 'ㄨㄢ', 'un': 'ㄨㄣ', 'uang': 'ㄨㄤ', 'ong': 'ㄨㄥ',
   'üe': 'ㄩㄝ', 'ue': 'ㄩㄝ', 'üan': 'ㄩㄢ', 'ün': 'ㄩㄣ',
-  'iong': 'ㄩㄥ'
+  'iong': 'ㄩㄥ',
+  'yue': 'ㄩㄝ', 'yuan': 'ㄩㄢ', 'yun': 'ㄩㄣ'
 };
 
 // Add Chinese punctuation mapping
@@ -89,87 +91,67 @@ const punctuationMap: Record<string, string> = {
   '﹏': '﹏'
 };
 
-export async function translateForKids(text: string): Promise<TranslationResult> {
+async function getZhuyinForCharacter(char: string): Promise<string> {
+  // Check special cases first
+  if (specialCases[char]) {
+    return specialCases[char];
+  }
+
+  // Try to find the character in the database
+  const entries = await databaseService.findByTraditional(char);
+  
+  if (entries && entries.length > 0) {
+    // Use the first entry's Zhuyin if found in database
+    return entries[0].zhuyin;
+  }
+
+  // Fallback to pinyin-pro if not found in database
+  const pinyinResult = pinyin(char, { 
+    toneType: 'num',
+    type: 'array',
+    v: true // Use v for ü
+  })[0];
+
+  const zhuyin = convertPinyinToZhuyin(pinyinResult);
+  if (zhuyin) {
+    return zhuyin;
+  } else {
+    console.warn(`No Zhuyin found for character: ${char}`);
+    return '';
+  }
+}
+
+export const translateForKids = async (text: string): Promise<TranslationResult> => {
   try {
-    // First, translate the English text to Chinese
-    const chineseText = await translateToChinese(text);
-    if (!chineseText) {
-      throw new Error('Translation failed');
-    }
-
-    // Process each character to get its Zhuyin
-    const pairs: CharacterZhuyinPair[] = [];
-    for (const char of chineseText) {
-      // Handle Chinese punctuation marks
-      if (punctuationMap[char]) {
-        pairs.push({
-          character: char,
-          zhuyin: '' // Punctuation marks don't have Zhuyin
-        });
-        continue;
-      }
-
-      // Handle spaces and other whitespace
-      if (/\s/.test(char)) {
-        pairs.push({
-          character: char,
-          zhuyin: ''
-        });
-        continue;
-      }
-
-      // Skip other non-Chinese characters that aren't punctuation
-      if (!/[\u4e00-\u9fff]/.test(char)) {
-        continue;
-      }
-
-      // Check special cases first
-      if (specialCases[char]) {
-        pairs.push({
-          character: char,
-          zhuyin: specialCases[char]
-        });
-        continue;
-      }
-
-      // Try to find the character in the database
-      const entries = await databaseService.findByTraditional(char);
-      
-      if (entries && entries.length > 0) {
-        // Use the first entry's Zhuyin if found in database
-        pairs.push({
-          character: char,
-          zhuyin: entries[0].zhuyin
-        });
-      } else {
-        // Fallback to pinyin-pro if not found in database
-        const pinyinResult = pinyin(char, { 
-          toneType: 'num',
-          type: 'array',
-          v: true // Use v for ü
-        })[0];
-
-        const zhuyin = convertPinyinToZhuyin(pinyinResult);
-        if (zhuyin) {
-          pairs.push({
-            character: char,
-            zhuyin: zhuyin
-          });
+    // First translate to Chinese
+    const translatedText = await translateToChinese(text);
+    
+    // Process each character in the translated Chinese text
+    const processedPairs = await Promise.all(
+      translatedText.split('').map(async (char) => {
+        // Check if character is Chinese
+        const isChinese = /[\u4e00-\u9fff]/.test(char);
+        
+        if (isChinese) {
+          // Get Zhuyin for Chinese characters
+          const zhuyin = await getZhuyinForCharacter(char);
+          return { character: char, zhuyin };
         } else {
-          console.warn(`No Zhuyin found for character: ${char}`);
+          // For non-Chinese characters, keep them in the output but with empty zhuyin
+          return { character: char, zhuyin: '' };
         }
-      }
-    }
+      })
+    );
 
     return {
       english: text,
-      pairs: pairs // No longer filtering out empty Zhuyin results to keep punctuation
+      pairs: processedPairs
     };
   } catch (error) {
     console.error('Error in translateForKids:', error);
     throw error;
   }
-}
+};
 
 function convertPinyinToZhuyin(pinyinSyllable: string): string {
   if (!pinyinSyllable) return '';
@@ -189,16 +171,21 @@ function convertPinyinToZhuyin(pinyinSyllable: string): string {
   const [, syllable, tone = '1'] = match;
   let result = '';
 
-  // Handle special cases for 'y' and 'w' initials
-  if (syllable.startsWith('y')) {
-    // For syllables starting with 'y', treat 'y' as 'i'
+  // Handle yu-based syllables first
+  if (syllable === 'yu') {
+    result = 'ㄩ';
+  } else if (syllable === 'yue') {
+    result = 'ㄩㄝ';
+  } else if (syllable === 'yuan') {
+    result = 'ㄩㄢ';
+  } else if (syllable === 'yun') {
+    result = 'ㄩㄣ';
+  } else if (syllable === 'yong') {
+    result = 'ㄩㄥ';
+  } else if (syllable.startsWith('y')) {
+    // For syllables starting with 'y', treat 'y' as 'i' except for yu-based syllables
     const remaining = syllable.slice(1);
-    if (remaining === 'u' || remaining === 'un' || remaining === 'uan') {
-      // Special cases: yu -> ü, yun -> ün, yuan -> üan
-      result = finalMap['ü' + remaining.slice(1)] || finalMap['ü'];
-    } else if (remaining === 'ue') {
-      result = finalMap['üe']; // Special case: yue -> üe
-    } else if (remaining === 'i' || remaining === '') {
+    if (remaining === 'i' || remaining === '') {
       // For 'yi' or 'y', just use 'i'
       result = finalMap['i'];
     } else {
