@@ -4,16 +4,27 @@ import { useRoute } from '@react-navigation/native';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { DictionaryEntry, fetchWordDefinition } from '../services/dictionaryService';
-import { translateForKids, TranslationResult, CharacterZhuyinPair } from '../services/kidFriendlyTranslationService';
+import { translateForKids, TranslationResult as ServiceTranslationResult, CharacterZhuyinPair } from '../services/kidFriendlyTranslationService';
 import { Audio } from 'expo-av';
 import { translateToChinese } from '../services/translationService';
+import * as Speech from 'expo-speech';
+import { Ionicons } from '@expo/vector-icons';
 
 type WordDetailScreenRouteProp = RouteProp<RootStackParamList, 'WordDetail'>;
 
+interface WordDetailParams {
+  word: string;
+  phonetic?: string;
+}
+
 interface TranslationState {
-  word: TranslationResult | null;
-  definitions: TranslationResult[];
-  examples: TranslationResult[];
+  word: ServiceTranslationResult | null;
+  definitions: {
+    [meaningIndex: number]: {
+      [defIndex: number]: ServiceTranslationResult;
+    };
+  };
+  examples: ServiceTranslationResult[];
 }
 
 interface ZhuyinTextProps {
@@ -93,15 +104,23 @@ const ZhuyinText: React.FC<ZhuyinTextProps> = ({ pairs }) => {
   );
 };
 
+interface TranslationResult {
+  english: string;
+  pairs: Array<{
+    character: string;
+    zhuyin: string;
+  }>;
+}
+
 export default function WordDetailScreen() {
   const route = useRoute<WordDetailScreenRouteProp>();
-  const { word } = route.params;
+  const { word, phonetic } = route.params as WordDetailParams;
   const [data, setData] = useState<DictionaryEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [translations, setTranslations] = useState<TranslationState>({
     word: null,
-    definitions: [],
+    definitions: {},
     examples: [],
   });
   const [translating, setTranslating] = useState(false);
@@ -126,6 +145,15 @@ export default function WordDetailScreen() {
     loadWord();
   }, [word]);
 
+  const translateDefinition = async (definition: string) => {
+    try {
+      return await translateForKids(definition);
+    } catch (error) {
+      console.error('Error translating definition:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     const translateContent = async () => {
       if (!data || data.length === 0) return;
@@ -135,38 +163,39 @@ export default function WordDetailScreen() {
       const entry = data[0];
       
       try {
-        console.log('Starting translation for word:', entry.word);
-        
         // Translate the word
         const wordTranslation = await translateForKids(entry.word);
-        console.log('Word translation:', wordTranslation);
         
-        // Translate definitions and examples
-        const definitions = entry.meanings.flatMap(meaning => 
-          meaning.definitions.map(def => def.definition)
-        );
+        // Translate definitions
+        const translatedDefinitions: TranslationState['definitions'] = {};
+        
+        for (let meaningIndex = 0; meaningIndex < entry.meanings.length; meaningIndex++) {
+          translatedDefinitions[meaningIndex] = {};
+          const meaning = entry.meanings[meaningIndex];
+          
+          for (let defIndex = 0; defIndex < meaning.definitions.length; defIndex++) {
+            const definition = meaning.definitions[defIndex];
+            const translatedDef = await translateDefinition(definition.definition);
+            if (translatedDef) {
+              translatedDefinitions[meaningIndex][defIndex] = translatedDef;
+            }
+          }
+        }
+        
+        // Translate examples
         const examples = entry.meanings.flatMap(meaning => 
           meaning.definitions
             .filter(def => def.example)
             .map(def => def.example as string)
         );
-
-        console.log('Translating definitions:', definitions);
-        const translatedDefinitions = await Promise.all(
-          definitions.map(def => translateForKids(def))
-        );
-        console.log('Translated definitions:', translatedDefinitions);
-
-        console.log('Translating examples:', examples);
         const translatedExamples = await Promise.all(
-          examples.map(example => translateForKids(example))
+          examples.map(translateDefinition)
         );
-        console.log('Translated examples:', translatedExamples);
 
         setTranslations({
           word: wordTranslation,
           definitions: translatedDefinitions,
-          examples: translatedExamples
+          examples: translatedExamples.filter((t): t is ServiceTranslationResult => t !== null)
         });
       } catch (err) {
         console.error('Translation error:', err);
@@ -246,6 +275,44 @@ export default function WordDetailScreen() {
     }
   };
 
+  const speakText = async (text: string, language: 'en' | 'zh') => {
+    try {
+      await Speech.speak(text, {
+        language: language,
+        pitch: 1.0,
+        rate: 0.8,
+      });
+    } catch (error) {
+      console.error('Error speaking text:', error);
+    }
+  };
+
+  const renderTranslation = (translation: ServiceTranslationResult | null, isExample: boolean = false) => {
+    if (!translation || !translation.pairs) return null;
+
+    return (
+      <View style={[styles.translationContainer, isExample && styles.exampleTranslationContainer]}>
+        <TouchableOpacity 
+          style={styles.sentenceContainer}
+          onPress={() => speakText(translation.english, 'en')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.englishText}>{translation.english}</Text>
+          <Ionicons name="volume-low" size={16} color="#007AFF" style={styles.inlineIcon} />
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.chineseContainer}
+          onPress={() => speakText(translation.pairs.map(p => p.character).join(''), 'zh')}
+          activeOpacity={0.7}
+        >
+          <ZhuyinText pairs={translation.pairs} />
+          <Ionicons name="volume-low" size={16} color="#007AFF" style={styles.inlineIcon} />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -272,83 +339,60 @@ export default function WordDetailScreen() {
   }
 
   const entry = data[0];
-  let definitionIndex = 0;
-  let exampleIndex = 0;
 
   return (
     <ScrollView style={styles.container}>
-      <View style={styles.wordContainer}>
-        <Text style={styles.word}>{entry.word}</Text>
-        <TouchableOpacity 
-          style={styles.speakerButton} 
-          onPress={playSound}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <Text style={styles.speakerIcon}>🔊</Text>
-          )}
-        </TouchableOpacity>
+      <View style={styles.header}>
+        <View style={styles.wordContainer}>
+          <TouchableOpacity 
+            style={styles.mainWordContainer}
+            onPress={() => speakText(word, 'en')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.word}>{word}</Text>
+            <Ionicons name="volume-medium" size={24} color="#007AFF" style={styles.mainWordIcon} />
+          </TouchableOpacity>
+          {phonetic && <Text style={styles.phonetic}>{phonetic}</Text>}
+        </View>
+        
+        {translations.word && renderTranslation(translations.word)}
       </View>
-      
-      {translations.word && (
-        <View style={styles.translationContainer}>
-          <ZhuyinText pairs={translations.word.pairs} />
-        </View>
-      )}
-      
-      {entry.phonetic && (
-        <View style={styles.phoneticContainer}>
-          <Text style={styles.phonetic}>{entry.phonetic}</Text>
-        </View>
-      )}
-      
-      {entry.meanings.map((meaning, index) => (
-        <View key={index} style={styles.meaningContainer}>
+
+      {entry.meanings.map((meaning, meaningIndex) => (
+        <View key={meaningIndex} style={styles.meaningContainer}>
           <View style={styles.partOfSpeechContainer}>
             <Text style={styles.partOfSpeech}>{meaning.partOfSpeech}</Text>
           </View>
           {meaning.definitions.map((definition, defIndex) => {
-            const currentDefIndex = definitionIndex++;
+            const translation = translations.definitions[meaningIndex]?.[defIndex];
             return (
               <View key={defIndex} style={styles.definitionContainer}>
-                <View style={styles.definitionContent}>
-                  <Text style={styles.definition}>{definition.definition}</Text>
-                  {translations.definitions[currentDefIndex] && (
-                    <View style={styles.translationContainer}>
-                      <ZhuyinText 
-                        pairs={translations.definitions[currentDefIndex].pairs}
-                      />
-                    </View>
-                  )}
-                </View>
-                {definition.example && (
-                  <View style={styles.exampleContainer}>
-                    <Text style={styles.exampleLabel}>Example:</Text>
-                    <Text style={styles.example}>{definition.example}</Text>
-                    {translations.examples[exampleIndex] && (
-                      <View style={styles.translationContainer}>
-                        <ZhuyinText 
-                          pairs={translations.examples[exampleIndex].pairs}
-                        />
-                      </View>
-                    )}
-                  </View>
-                )}
+                <Text style={styles.definitionLabel}>Definition {defIndex + 1}</Text>
+                {translation && renderTranslation(translation)}
               </View>
             );
           })}
         </View>
       ))}
-      
+
+      {translations.examples.length > 0 && (
+        <View style={styles.examplesSection}>
+          <Text style={styles.sectionTitle}>Examples</Text>
+          {translations.examples.map((example, index) => (
+            <View key={index} style={styles.exampleContainer}>
+              {renderTranslation(example, true)}
+            </View>
+          ))}
+        </View>
+      )}
+
       {translating && (
         <View style={styles.translatingContainer}>
           <ActivityIndicator size="small" color="#FF6B6B" />
           <Text style={styles.translatingText}>Translating...</Text>
         </View>
       )}
-      
+
       {translationError && (
         <Text style={styles.errorText}>{translationError}</Text>
       )}
@@ -362,41 +406,35 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FA',
     padding: 20,
   },
+  header: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
   wordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 30,
+  },
+  mainWordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mainWordIcon: {
+    marginLeft: 10,
   },
   word: {
     fontSize: 36,
     fontWeight: 'bold',
     color: '#2D3436',
     marginRight: 15,
-  },
-  speakerButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#4ECDC4',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  speakerIcon: {
-    fontSize: 24,
-  },
-  translationContainer: {
-    marginVertical: 5,
-  },
-  translationText: {
-    fontSize: 18,
-    color: '#2D3436',
-    marginBottom: 2,
   },
   phoneticContainer: {
     backgroundColor: '#FFFFFF',
@@ -438,7 +476,16 @@ const styles = StyleSheet.create({
     color: '#2D3436',
   },
   definitionContainer: {
-    marginBottom: 15,
+    marginVertical: 10,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    padding: 15,
+  },
+  definitionLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2D3436',
+    marginBottom: 8,
   },
   definitionContent: {
     paddingLeft: 10,
@@ -452,16 +499,16 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   exampleContainer: {
-    marginTop: 10,
+    marginVertical: 10,
     padding: 10,
-    backgroundColor: '#F1F2F6',
+    backgroundColor: '#F8F9FA',
     borderRadius: 8,
   },
   exampleLabel: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#2D3436',
-    marginBottom: 5,
+    marginBottom: 8,
   },
   example: {
     fontSize: 14,
@@ -597,5 +644,89 @@ const styles = StyleSheet.create({
   },
   spaceText: {
     width: 8, // Fixed width for spaces
+  },
+  sentenceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  chineseContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F8F9FA',
+    padding: 12,
+    borderRadius: 8,
+    width: '100%',
+  },
+  chineseTextContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    marginVertical: 10,
+    paddingHorizontal: 10,
+  },
+  chineseCharacter: {
+    fontSize: 24,
+    color: '#000',
+    marginRight: 4,
+    lineHeight: 32,
+  },
+  englishText: {
+    fontSize: 18,
+    color: '#2D3436',
+    fontWeight: 'bold',
+  },
+  chineseText: {
+    fontSize: 18,
+    color: '#2D3436',
+    fontStyle: 'italic',
+  },
+  characterPair: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginRight: 16,
+    marginBottom: 8,
+    height: 32,
+  },
+  zhuyinChar: {
+    fontSize: 12,
+    color: '#333',
+    lineHeight: 11,
+    height: 11,
+    textAlign: 'center',
+    width: '100%',
+    marginBottom: 1,
+  },
+  exampleTranslationContainer: {
+    marginLeft: 10,
+  },
+  inlineIcon: {
+    marginLeft: 8,
+    opacity: 0.7,
+    alignSelf: 'center',
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2D3436',
+    marginBottom: 15,
+    marginTop: 10,
+  },
+  examplesSection: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    padding: 20,
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  translationContainer: {
+    marginVertical: 5,
   },
 }); 
