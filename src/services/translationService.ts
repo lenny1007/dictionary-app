@@ -1,46 +1,60 @@
 import axios from 'axios';
-import Constants from 'expo-constants';
+import { ENV } from '../config/env';
 
 // Remove dotenv import and config
 // import * as dotenv from 'dotenv';
 // dotenv.config();
 
+interface TranslationResponse {
+  data: {
+    translations: Array<{
+      translatedText: string;
+    }>;
+  };
+}
+
 // Use the environment variable directly
-const API_KEY = Constants.expoConfig?.extra?.googleTranslateApiKey;
+const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_TRANSLATE_API_KEY;
 
 export const translateToChinese = async (text: string): Promise<string> => {
   try {
     console.log('Translating text:', text);
-    console.log('API Key:', API_KEY);
+    console.log('Using API key:', ENV.GOOGLE_TRANSLATE_API_KEY ? 'Present' : 'Missing');
     
-    if (!API_KEY) {
+    if (!ENV.GOOGLE_TRANSLATE_API_KEY) {
       console.error('API Key is missing');
-      return 'Translation API key not configured';
+      throw new Error('Translation API key not configured');
     }
 
-    const response = await axios.get('https://translation.googleapis.com/language/translate/v2', {
-      params: {
+    const response = await axios.post<TranslationResponse>(
+      `https://translation.googleapis.com/language/translate/v2?key=${ENV.GOOGLE_TRANSLATE_API_KEY}`,
+      {
         q: text,
         target: 'zh-TW',
         source: 'en',
-        key: API_KEY,
-      },
-    });
+      }
+    );
 
     console.log('Translation response:', response.data);
     
-    if (response.data && response.data.data && response.data.data.translations) {
+    if (response.data?.data?.translations?.[0]?.translatedText) {
       return response.data.data.translations[0].translatedText;
     } else {
       console.error('Unexpected response format:', response.data);
-      return 'Translation format error';
+      throw new Error('Translation format error');
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Translation error:', error);
-    if (axios.isAxiosError(error)) {
-      console.error('Error response:', error.response?.data);
-      console.error('Error status:', error.response?.status);
+    
+    // Check if it's an Axios error with a response
+    if (error && typeof error === 'object' && 'response' in error) {
+      const axiosError = error as { response?: { data?: unknown; status?: number } };
+      console.error('Error response:', axiosError.response?.data);
+      console.error('Error status:', axiosError.response?.status);
     }
-    return 'Translation not available';
+    
+    // Get error message if available
+    const errorMessage = error instanceof Error ? error.message : 'Translation failed';
+    throw new Error(errorMessage);
   }
 }; 

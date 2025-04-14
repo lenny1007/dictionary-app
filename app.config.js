@@ -1,3 +1,19 @@
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Load environment variables from .env file
+dotenv.config();
+
+// Validate that we have the required environment variables
+const requiredEnvVars = ['EXPO_PUBLIC_GOOGLE_TRANSLATE_API_KEY'];
+const missingEnvVars = requiredEnvVars.filter(key => !process.env[key]);
+
+if (missingEnvVars.length > 0) {
+  console.error('Missing required environment variables:', missingEnvVars);
+  console.error('Please check your .env file');
+  process.exit(1);
+}
+
 module.exports = {
   expo: {
     name: 'Dictionary App',
@@ -24,7 +40,8 @@ module.exports = {
       }
     },
     web: {
-      favicon: './assets/favicon.png'
+      favicon: './assets/favicon.png',
+      bundler: 'metro'
     },
     extra: {
       googleTranslateApiKey: process.env.EXPO_PUBLIC_GOOGLE_TRANSLATE_API_KEY

@@ -26,6 +26,19 @@ const ZhuyinText: React.FC<ZhuyinTextProps> = ({ pairs }) => {
   return (
     <View style={styles.zhuyinTextContainer}>
       {pairs.map((pair, idx) => {
+        // Handle punctuation marks and spaces
+        if (!pair.zhuyin) {
+          return (
+            <Text key={idx} style={[
+              styles.characterText,
+              styles.punctuationText,
+              /\s/.test(pair.character) && styles.spaceText
+            ]}>
+              {pair.character}
+            </Text>
+          );
+        }
+
         const zhuyinChars = pair.zhuyin.split('');
         const toneMark = zhuyinChars.find(char => 'ˉˊˇˋ˙'.includes(char));
         const baseChars = zhuyinChars.filter(char => !'ˉˊˇˋ˙'.includes(char));
@@ -38,19 +51,22 @@ const ZhuyinText: React.FC<ZhuyinTextProps> = ({ pairs }) => {
             </Text>
             <View style={[
               styles.zhuyinContainer,
+              charCount === 1 && styles.zhuyinContainerSingle,
               charCount === 2 && styles.zhuyinContainerDouble,
               charCount === 3 && styles.zhuyinContainerTriple
             ]}>
               <View style={[
                 styles.zhuyinStack,
+                charCount === 1 && styles.zhuyinStackSingle,
                 charCount === 2 && styles.zhuyinStackDouble,
                 charCount === 3 && styles.zhuyinStackTriple
               ]}>
                 {baseChars.map((zhuyinChar, zhuyinIdx) => (
                   <Text key={zhuyinIdx} style={[
                     styles.zhuyinText,
-                    zhuyinIdx === baseChars.length - 1 && styles.lastZhuyinChar,
-                    charCount === 3 && styles.zhuyinTextTriple
+                    charCount === 1 && styles.zhuyinTextSingle,
+                    charCount === 3 && styles.zhuyinTextTriple,
+                    zhuyinIdx === baseChars.length - 1 && styles.lastZhuyinChar
                   ]}>
                     {zhuyinChar}
                   </Text>
@@ -499,11 +515,16 @@ const styles = StyleSheet.create({
     position: 'relative',
     height: 32,
   },
+  zhuyinContainerSingle: {
+    justifyContent: 'center',
+    paddingTop: 4,
+  },
   zhuyinContainerDouble: {
     paddingTop: 8,
   },
   zhuyinContainerTriple: {
-    paddingTop: 0,
+    paddingTop: 2,
+    height: 28,
   },
   zhuyinStack: {
     flexDirection: 'column',
@@ -512,12 +533,16 @@ const styles = StyleSheet.create({
     width: 16,
     position: 'relative',
   },
+  zhuyinStackSingle: {
+    justifyContent: 'center',
+    height: 20,
+  },
   zhuyinStackDouble: {
     justifyContent: 'flex-end',
   },
   zhuyinStackTriple: {
     justifyContent: 'space-between',
-    height: 32,
+    height: 26,
   },
   zhuyinText: {
     fontSize: 12,
@@ -528,8 +553,15 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 1,
   },
+  zhuyinTextSingle: {
+    marginBottom: 0,
+    height: 14,
+    lineHeight: 14,
+  },
   zhuyinTextTriple: {
     marginBottom: 0,
+    height: 9,
+    lineHeight: 9,
   },
   lastZhuyinChar: {
     marginBottom: 0,
@@ -549,7 +581,7 @@ const styles = StyleSheet.create({
   },
   normalToneSingle: {
     right: -10,
-    top: 0,
+    top: 2,
   },
   normalToneDouble: {
     right: -10,
@@ -557,6 +589,13 @@ const styles = StyleSheet.create({
   },
   normalToneTriple: {
     right: -10,
-    bottom: 0,
+    bottom: -2,
+  },
+  punctuationText: {
+    marginHorizontal: 2,
+    fontSize: 20, // Slightly smaller than Chinese characters
+  },
+  spaceText: {
+    width: 8, // Fixed width for spaces
   },
 }); 
