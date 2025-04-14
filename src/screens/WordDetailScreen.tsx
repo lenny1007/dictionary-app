@@ -4,16 +4,78 @@ import { useRoute } from '@react-navigation/native';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../App';
 import { DictionaryEntry, fetchWordDefinition } from '../services/dictionaryService';
-import { translateToChinese } from '../services/translationService';
+import { translateForKids, TranslationResult, CharacterZhuyinPair } from '../services/kidFriendlyTranslationService';
 import { Audio } from 'expo-av';
+import { translateToChinese } from '../services/translationService';
 
 type WordDetailScreenRouteProp = RouteProp<RootStackParamList, 'WordDetail'>;
 
 interface TranslationState {
-  word: string | null;
-  definitions: string[];
-  examples: string[];
+  word: TranslationResult | null;
+  definitions: TranslationResult[];
+  examples: TranslationResult[];
 }
+
+interface ZhuyinTextProps {
+  pairs: CharacterZhuyinPair[];
+}
+
+const ZhuyinText: React.FC<ZhuyinTextProps> = ({ pairs }) => {
+  if (!pairs || pairs.length === 0) return null;
+  
+  return (
+    <View style={styles.zhuyinTextContainer}>
+      {pairs.map((pair, idx) => {
+        const zhuyinChars = pair.zhuyin.split('');
+        const toneMark = zhuyinChars.find(char => 'ˉˊˇˋ˙'.includes(char));
+        const baseChars = zhuyinChars.filter(char => !'ˉˊˇˋ˙'.includes(char));
+        const charCount = baseChars.length;
+        
+        return (
+          <View key={idx} style={styles.characterPairContainer}>
+            <Text style={styles.characterText}>
+              {pair.character}
+            </Text>
+            <View style={[
+              styles.zhuyinContainer,
+              charCount === 2 && styles.zhuyinContainerDouble,
+              charCount === 3 && styles.zhuyinContainerTriple
+            ]}>
+              <View style={[
+                styles.zhuyinStack,
+                charCount === 2 && styles.zhuyinStackDouble,
+                charCount === 3 && styles.zhuyinStackTriple
+              ]}>
+                {baseChars.map((zhuyinChar, zhuyinIdx) => (
+                  <Text key={zhuyinIdx} style={[
+                    styles.zhuyinText,
+                    zhuyinIdx === baseChars.length - 1 && styles.lastZhuyinChar,
+                    charCount === 3 && styles.zhuyinTextTriple
+                  ]}>
+                    {zhuyinChar}
+                  </Text>
+                ))}
+                {toneMark && (
+                  <Text style={[
+                    styles.toneMark,
+                    toneMark === '˙' && styles.neutralTone,
+                    toneMark !== '˙' && (
+                      charCount === 1 ? styles.normalToneSingle :
+                      charCount === 2 ? styles.normalToneDouble :
+                      styles.normalToneTriple
+                    )
+                  ]}>
+                    {toneMark}
+                  </Text>
+                )}
+              </View>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+};
 
 export default function WordDetailScreen() {
   const route = useRoute<WordDetailScreenRouteProp>();
@@ -60,7 +122,7 @@ export default function WordDetailScreen() {
         console.log('Starting translation for word:', entry.word);
         
         // Translate the word
-        const wordTranslation = await translateToChinese(entry.word);
+        const wordTranslation = await translateForKids(entry.word);
         console.log('Word translation:', wordTranslation);
         
         // Translate definitions and examples
@@ -75,20 +137,20 @@ export default function WordDetailScreen() {
 
         console.log('Translating definitions:', definitions);
         const translatedDefinitions = await Promise.all(
-          definitions.map(def => translateToChinese(def))
+          definitions.map(def => translateForKids(def))
         );
         console.log('Translated definitions:', translatedDefinitions);
 
         console.log('Translating examples:', examples);
         const translatedExamples = await Promise.all(
-          examples.map(example => translateToChinese(example))
+          examples.map(example => translateForKids(example))
         );
         console.log('Translated examples:', translatedExamples);
 
         setTranslations({
           word: wordTranslation,
           definitions: translatedDefinitions,
-          examples: translatedExamples,
+          examples: translatedExamples
         });
       } catch (err) {
         console.error('Translation error:', err);
@@ -121,6 +183,26 @@ export default function WordDetailScreen() {
         setSound(null);
       }
 
+      if (!data || data.length === 0) {
+        Alert.alert(
+          'Error',
+          'Word data is not available.'
+        );
+        return;
+      }
+
+      // Get the first available audio URL from phonetics
+      const entry = data[0];
+      const audioUrl = entry.phonetics.find(p => p.audio)?.audio;
+      
+      if (!audioUrl) {
+        Alert.alert(
+          'Audio Not Available',
+          'Pronunciation audio is not available for this word.'
+        );
+        return;
+      }
+
       // Set up audio mode
       await Audio.setAudioModeAsync({
         playsInSilentModeIOS: true,
@@ -131,7 +213,7 @@ export default function WordDetailScreen() {
 
       // Create and play the sound
       const { sound: newSound } = await Audio.Sound.createAsync(
-        require('../assets/hello.mp3'), // We'll need to add this file
+        { uri: audioUrl },
         { shouldPlay: true }
       );
       
@@ -195,7 +277,9 @@ export default function WordDetailScreen() {
       </View>
       
       {translations.word && (
-        <Text style={styles.translation}>{translations.word}</Text>
+        <View style={styles.translationContainer}>
+          <ZhuyinText pairs={translations.word.pairs} />
+        </View>
       )}
       
       {entry.phonetic && (
@@ -216,9 +300,11 @@ export default function WordDetailScreen() {
                 <View style={styles.definitionContent}>
                   <Text style={styles.definition}>{definition.definition}</Text>
                   {translations.definitions[currentDefIndex] && (
-                    <Text style={styles.translation}>
-                      {translations.definitions[currentDefIndex]}
-                    </Text>
+                    <View style={styles.translationContainer}>
+                      <ZhuyinText 
+                        pairs={translations.definitions[currentDefIndex].pairs}
+                      />
+                    </View>
                   )}
                 </View>
                 {definition.example && (
@@ -226,9 +312,11 @@ export default function WordDetailScreen() {
                     <Text style={styles.exampleLabel}>Example:</Text>
                     <Text style={styles.example}>{definition.example}</Text>
                     {translations.examples[exampleIndex] && (
-                      <Text style={styles.translation}>
-                        {translations.examples[exampleIndex++]}
-                      </Text>
+                      <View style={styles.translationContainer}>
+                        <ZhuyinText 
+                          pairs={translations.examples[exampleIndex].pairs}
+                        />
+                      </View>
                     )}
                   </View>
                 )}
@@ -286,10 +374,13 @@ const styles = StyleSheet.create({
   speakerIcon: {
     fontSize: 24,
   },
-  translation: {
-    fontSize: 20,
-    color: '#636E72',
-    marginTop: 5,
+  translationContainer: {
+    marginVertical: 5,
+  },
+  translationText: {
+    fontSize: 18,
+    color: '#2D3436',
+    marginBottom: 2,
   },
   phoneticContainer: {
     backgroundColor: '#FFFFFF',
@@ -381,5 +472,91 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     fontSize: 14,
     color: '#636E72',
+  },
+  zhuyinTextContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    marginVertical: 10,
+    paddingHorizontal: 10,
+  },
+  characterPairContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginRight: 16,
+    marginBottom: 8,
+    height: 32,
+  },
+  characterText: {
+    fontSize: 24,
+    color: '#000',
+    marginRight: 4,
+    lineHeight: 32,
+  },
+  zhuyinContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    position: 'relative',
+    height: 32,
+  },
+  zhuyinContainerDouble: {
+    paddingTop: 8,
+  },
+  zhuyinContainerTriple: {
+    paddingTop: 0,
+  },
+  zhuyinStack: {
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    width: 16,
+    position: 'relative',
+  },
+  zhuyinStackDouble: {
+    justifyContent: 'flex-end',
+  },
+  zhuyinStackTriple: {
+    justifyContent: 'space-between',
+    height: 32,
+  },
+  zhuyinText: {
+    fontSize: 12,
+    color: '#333',
+    lineHeight: 11,
+    height: 11,
+    textAlign: 'center',
+    width: '100%',
+    marginBottom: 1,
+  },
+  zhuyinTextTriple: {
+    marginBottom: 0,
+  },
+  lastZhuyinChar: {
+    marginBottom: 0,
+  },
+  toneMark: {
+    fontSize: 14,
+    color: '#333',
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    textAlign: 'center',
+  },
+  neutralTone: {
+    right: 3,
+    top: -12,
+    fontSize: 16,
+  },
+  normalToneSingle: {
+    right: -10,
+    top: 0,
+  },
+  normalToneDouble: {
+    right: -10,
+    bottom: 0,
+  },
+  normalToneTriple: {
+    right: -10,
+    bottom: 0,
   },
 }); 
