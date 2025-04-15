@@ -111,8 +111,8 @@ const SearchScreen: React.FC = () => {
   const handleWordSelect = async (entry: DictionaryEntry) => {
     await saveSearchHistory(entry.word);
     navigation.navigate('WordDetail', {
-      word: entry.word,
-    } as never);
+      entry
+    });
   };
 
   const renderItem = ({ item }: { item: ListItem }) => {

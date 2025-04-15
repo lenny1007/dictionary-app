@@ -1,7 +1,8 @@
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { DictionaryEntry } from './dictionary';
 
 export interface WordDetailParams {
-  word: string;
+  entry: DictionaryEntry;
 }
 
 export type RootStackParamList = {
