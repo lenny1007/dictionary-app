@@ -7,9 +7,15 @@ export interface CharacterZhuyinPair {
   zhuyin: string;
 }
 
-export interface TranslationResult {
-  english: string;
+export interface Example {
   pairs: CharacterZhuyinPair[];
+  english: string;
+}
+
+export interface TranslationResult {
+  pairs: CharacterZhuyinPair[];
+  english: string;
+  examples?: Example[];
 }
 
 const toneMarks: { [key: string]: string } = {

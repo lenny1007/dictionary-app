@@ -16,6 +16,10 @@ const HomeScreen = () => {
     }
   };
 
+  const handleSearchFocus = () => {
+    navigation.navigate('Search');
+  };
+
   return (
     <KeyboardAvoidingView 
       style={styles.container}
@@ -33,6 +37,7 @@ const HomeScreen = () => {
             value={searchWord}
             onChangeText={setSearchWord}
             onSubmitEditing={handleSearch}
+            onFocus={handleSearchFocus}
             returnKeyType="search"
           />
           <TouchableOpacity 

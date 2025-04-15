@@ -1,24 +1,7 @@
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-interface Definition {
-  pos: string;
-  definition: string;
-  cefr: string;
-  example: string;
-}
-
-interface DictionaryEntry {
-  _id: {
-    $oid: string;
-  };
-  word: string;
-  paragraph: string;
-  definitions: Definition[];
-  phonic: string;
-  audio: string;
-}
+import { DictionaryEntry, Meaning } from '../types/dictionary';
 
 interface SearchResult {
   entry: DictionaryEntry;
@@ -46,7 +29,36 @@ export class SearchService {
 
     try {
       const rawDictionary = require('../../assets/gpt_dict.json');
-      this.dictionary = rawDictionary;
+      // Transform the raw dictionary data to match our DictionaryEntry type
+      this.dictionary = rawDictionary.map((entry: any) => {
+        try {
+          if (!entry.word) {
+            console.warn('Dictionary entry missing word:', entry);
+            return null;
+          }
+
+          return {
+            word: entry.word,
+            phonetic: entry.phonic || '',
+            meanings: Array.isArray(entry.definitions) 
+              ? entry.definitions.map((def: any) => ({
+                  partOfSpeech: def.pos || 'word',
+                  definitions: [def.definition || ''],
+                  examples: def.example ? [def.example] : []
+                }))
+              : [{
+                  partOfSpeech: 'word',
+                  definitions: [''],
+                  examples: []
+                }],
+            translation: entry.paragraph || ''
+          };
+        } catch (error) {
+          console.error('Error transforming dictionary entry:', error, entry);
+          return null;
+        }
+      }).filter(Boolean) as DictionaryEntry[];
+
       this.isInitialized = true;
     } catch (error) {
       console.error('Error initializing dictionary:', error);
@@ -76,19 +88,23 @@ export class SearchService {
     }
 
     // Check definitions
-    if (Array.isArray(entry.definitions)) {
-      for (const def of entry.definitions) {
-        if (this.normalizeText(def.definition).includes(normalizedQuery)) {
+    for (const meaning of entry.meanings) {
+      for (const definition of meaning.definitions) {
+        if (this.normalizeText(definition).includes(normalizedQuery)) {
           score += 20;
         }
-        if (def.example && this.normalizeText(def.example).includes(normalizedQuery)) {
-          score += 10;
+      }
+      if (meaning.examples) {
+        for (const example of meaning.examples) {
+          if (this.normalizeText(example).includes(normalizedQuery)) {
+            score += 10;
+          }
         }
       }
     }
 
-    // Check paragraph
-    if (entry.paragraph && this.normalizeText(entry.paragraph).includes(normalizedQuery)) {
+    // Check translation
+    if (entry.translation && this.normalizeText(entry.translation).includes(normalizedQuery)) {
       score += 5;
     }
 
@@ -118,7 +134,7 @@ export class SearchService {
     return results;
   }
 
-  public async getAutocompleteSuggestions(query: string): Promise<string[]> {
+  public async getAutocompleteSuggestions(query: string): Promise<DictionaryEntry[]> {
     if (!this.isInitialized) {
       await this.initialize();
     }
@@ -130,7 +146,6 @@ export class SearchService {
 
     return this.dictionary
       .filter(entry => this.normalizeText(entry.word).startsWith(normalizedQuery))
-      .map(entry => entry.word)
       .slice(0, 5);
   }
 

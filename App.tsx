@@ -3,14 +3,10 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import HomeScreen from './src/screens/HomeScreen';
+import SearchScreen from './src/screens/SearchScreen';
 import WordDetailScreen from './src/screens/WordDetailScreen';
 import FavoritesScreen from './src/screens/FavoritesScreen';
-
-export type RootStackParamList = {
-  Home: undefined;
-  WordDetail: { word: string };
-  Favorites: undefined;
-};
+import { RootStackParamList } from './src/types/navigation';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -34,6 +30,11 @@ export default function App() {
             name="Home" 
             component={HomeScreen} 
             options={{ title: 'Dictionary App' }}
+          />
+          <Stack.Screen 
+            name="Search" 
+            component={SearchScreen} 
+            options={{ title: 'Search' }}
           />
           <Stack.Screen 
             name="WordDetail" 
