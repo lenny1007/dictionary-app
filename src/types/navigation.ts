@@ -1,5 +1,14 @@
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+
+export interface WordDetailParams {
+  word: string;
+}
+
 export type RootStackParamList = {
   Home: undefined;
-  WordDetail: { word: string };
+  Search: undefined;
+  WordDetail: WordDetailParams;
   Favorites: undefined;
-}; 
+};
+
+export type RootStackNavigationProp = NativeStackNavigationProp<RootStackParamList>; 
