@@ -181,18 +181,20 @@ export default function WordDetailScreen() {
     }
   };
 
-  const renderTranslation = (translation: ServiceTranslationResult | null, isExample: boolean = false) => {
+  const renderTranslation = (translation: ServiceTranslationResult | null, isExample: boolean = false, showEnglish: boolean = true) => {
     if (!translation) return null;
     
     return (
       <View style={styles.translationContainer}>
-        <TouchableOpacity 
-          onPress={() => speakText(translation.english, 'en')}
-          style={styles.textWithIcon}
-        >
-          <Text style={styles.englishText}>{translation.english}</Text>
-          <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
-        </TouchableOpacity>
+        {showEnglish && (
+          <TouchableOpacity 
+            onPress={() => speakText(translation.english, 'en')}
+            style={styles.textWithIcon}
+          >
+            <Text style={styles.englishText}>{translation.english}</Text>
+            <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
+          </TouchableOpacity>
+        )}
         {translation.pairs.length > 0 && (
           <TouchableOpacity 
             onPress={() => speakText(translation.pairs.map(p => p.character).join(''), 'zh')}
@@ -247,9 +249,15 @@ export default function WordDetailScreen() {
                 <Text style={styles.partOfSpeech}>{meaning.partOfSpeech}</Text>
                 {meaning.definitions.map((definition: string, defIndex: number) => (
                   <View key={defIndex} style={styles.definitionContainer}>
-                    <Text style={styles.definitionText}>{definition}</Text>
+                    <TouchableOpacity 
+                      onPress={() => speakText(definition, 'en')}
+                      style={styles.textWithIcon}
+                    >
+                      <Text style={styles.definitionText}>{definition}</Text>
+                      <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
+                    </TouchableOpacity>
                     {translations.definitions[meaningIndex]?.[defIndex] && 
-                      renderTranslation(translations.definitions[meaningIndex][defIndex])}
+                      renderTranslation(translations.definitions[meaningIndex][defIndex], false, false)}
                   </View>
                 ))}
               </View>
@@ -308,14 +316,22 @@ export default function WordDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     padding: 16,
   },
   header: {
-    marginBottom: 20,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   wordText: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: 'bold',
     color: '#2D3436',
     marginRight: 8,
@@ -323,53 +339,78 @@ const styles = StyleSheet.create({
   phoneticText: {
     fontSize: 18,
     color: '#636E72',
-    marginTop: 4,
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   section: {
-    marginBottom: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#2D3436',
-    marginBottom: 12,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F2F6',
+    paddingBottom: 8,
   },
   meaningContainer: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   partOfSpeech: {
     fontSize: 16,
     fontStyle: 'italic',
     color: '#636E72',
     marginBottom: 8,
+    backgroundColor: '#F1F2F6',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 16,
+    alignSelf: 'flex-start',
   },
   definitionContainer: {
-    marginBottom: 12,
+    marginBottom: 16,
+    paddingLeft: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: '#DFE6E9',
   },
   definitionText: {
     fontSize: 16,
     color: '#2D3436',
-    marginBottom: 8,
+    marginBottom: 12,
+    lineHeight: 24,
   },
   translationContainer: {
-    backgroundColor: '#F1F2F6',
-    padding: 12,
+    backgroundColor: '#F8F9FA',
+    padding: 16,
     borderRadius: 8,
     marginTop: 8,
-    
   },
   englishText: {
     fontSize: 16,
     color: '#2D3436',
     marginRight: 8,
+    lineHeight: 24,
   },
   translationText: {
     fontSize: 16,
     color: '#2D3436',
     marginRight: 8,
+    lineHeight: 24,
   },
   exampleContainer: {
-    marginBottom: 12,
+    marginBottom: 16,
+    backgroundColor: '#F1F2F6',
+    borderRadius: 8,
+    padding: 12,
   },
   textWithIcon: {
     flexDirection: 'row',
@@ -379,13 +420,16 @@ const styles = StyleSheet.create({
     marginTop: 0,
   },
   loader: {
-    marginTop: 20,
+    marginTop: 24,
   },
   errorText: {
-    color: '#FF0000',
+    color: '#FF6B6B',
     fontSize: 16,
     textAlign: 'center',
-    marginTop: 20,
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: '#FFE3E3',
+    borderRadius: 8,
   },
   zhuyinTextContainer: {
     flexDirection: 'row',
