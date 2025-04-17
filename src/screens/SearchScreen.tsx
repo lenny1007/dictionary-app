@@ -6,185 +6,126 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 import { SearchService } from '../services/searchService';
+import { StorageService } from '../services/storageService';
 import { DictionaryEntry } from '../types/dictionary';
 import { RootStackParamList } from '../types/navigation';
 
 type SearchScreenNavigationProp = NavigationProp<RootStackParamList>;
 
-interface SearchScreenProps {
-  navigation: SearchScreenNavigationProp;
-}
-
-type ListItem = DictionaryEntry | string;
-
-interface State {
-  query: string;
-  searchHistory: string[];
-  suggestions: DictionaryEntry[];
-  searchResults: DictionaryEntry[];
-}
-
-const HISTORY_KEY = 'searchHistory';
-const MAX_HISTORY = 10;
-
 const SearchScreen: React.FC = () => {
   const navigation = useNavigation<SearchScreenNavigationProp>();
-  const [state, setState] = useState<State>({
-    query: '',
-    searchHistory: [],
-    suggestions: [],
-    searchResults: [],
-  });
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<DictionaryEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<DictionaryEntry[]>([]);
+  const [favorites, setFavorites] = useState<DictionaryEntry[]>([]);
+  const [showRecent, setShowRecent] = useState(true);
 
   useEffect(() => {
-    loadSearchHistory();
+    loadRecentSearches();
+    loadFavorites();
   }, []);
 
-  const loadSearchHistory = async () => {
-    try {
-      const history = await AsyncStorage.getItem(HISTORY_KEY);
-      if (history) {
-        setState(prev => ({
-          ...prev,
-          searchHistory: JSON.parse(history),
-        }));
-      }
-    } catch (error) {
-      console.error('Error loading search history:', error);
-    }
+  const loadRecentSearches = async () => {
+    const storageService = StorageService.getInstance();
+    const searches = await storageService.getRecentSearches();
+    setRecentSearches(searches);
   };
 
-  const saveSearchHistory = async (query: string) => {
-    try {
-      const updatedHistory = [
-        query,
-        ...state.searchHistory.filter(item => item !== query),
-      ].slice(0, MAX_HISTORY);
-      
-      await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updatedHistory));
-      setState(prev => ({
-        ...prev,
-        searchHistory: updatedHistory,
-      }));
-    } catch (error) {
-      console.error('Error saving search history:', error);
-    }
+  const loadFavorites = async () => {
+    const storageService = StorageService.getInstance();
+    const favs = await storageService.getFavorites();
+    setFavorites(favs);
   };
 
   const handleSearch = async (text: string) => {
-    setState(prev => ({ ...prev, query: text }));
-
-    if (!text.trim()) {
-      setState(prev => ({
-        ...prev,
-        suggestions: [],
-        searchResults: [],
-      }));
+    setQuery(text);
+    if (text.length < 2) {
+      setResults([]);
+      setShowRecent(true);
       return;
     }
 
-    const searchService = SearchService.getInstance();
-    await searchService.initialize();
-
-    if (text.length < 3) {
-      const suggestions = await searchService.getAutocompleteSuggestions(text);
-      setState(prev => ({
-        ...prev,
-        suggestions,
-        searchResults: [],
-      }));
-    } else {
-      const results = await searchService.search(text);
-      setState(prev => ({
-        ...prev,
-        suggestions: [],
-        searchResults: results,
-      }));
+    setLoading(true);
+    setShowRecent(false);
+    try {
+      const searchResults = await SearchService.getInstance().search(text);
+      setResults(searchResults.items);
+    } catch (error) {
+      console.error('Search error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleWordSelect = async (entry: DictionaryEntry) => {
-    await saveSearchHistory(entry.word);
-    navigation.navigate('WordDetail', {
-      entry
-    });
+    const storageService = StorageService.getInstance();
+    await storageService.addToRecentSearches(entry);
+    navigation.navigate('WordDetail', { entry });
   };
 
-  const renderItem = ({ item }: { item: ListItem }) => {
-    if (typeof item === 'string') {
-      return (
-        <TouchableOpacity
-          style={styles.historyItem}
-          onPress={() => handleSearch(item)}
-        >
-          <Text style={styles.historyText}>{item}</Text>
-        </TouchableOpacity>
-      );
-    }
+  const renderItem = ({ item }: { item: DictionaryEntry }) => (
+    <TouchableOpacity
+      style={styles.resultItem}
+      onPress={() => handleWordSelect(item)}
+    >
+      <Text style={styles.wordText}>{item.word}</Text>
+      {item.phonetic && (
+        <Text style={styles.phoneticText}>{item.phonetic}</Text>
+      )}
+      {item.meanings[0]?.definitions[0] && (
+        <Text style={styles.definitionText} numberOfLines={1}>
+          {item.meanings[0].definitions[0]}
+        </Text>
+      )}
+    </TouchableOpacity>
+  );
 
-    if (!item || !item.word) {
-      return null;
-    }
-
-    const definition = item.meanings?.[0]?.definitions?.[0] || '';
-    const partOfSpeech = item.meanings?.[0]?.partOfSpeech || 'word';
-
+  const renderSectionHeader = () => {
+    if (query.length > 0) return null;
+    
     return (
-      <TouchableOpacity
-        style={styles.suggestionItem}
-        onPress={() => handleWordSelect(item)}
-      >
-        <View>
-          <Text style={styles.wordText}>{item.word}</Text>
-          {item.phonetic ? (
-            <Text style={styles.phoneticText}>/{item.phonetic}/</Text>
-          ) : null}
-          {definition ? (
-            <Text style={styles.definitionText}>
-              <Text style={styles.partOfSpeech}>{partOfSpeech}</Text>
-              {': '}
-              {definition}
-            </Text>
-          ) : null}
-        </View>
-      </TouchableOpacity>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>
+          {showRecent ? 'Recent Searches' : 'Favorites'}
+        </Text>
+        <TouchableOpacity
+          onPress={() => setShowRecent(!showRecent)}
+          style={styles.toggleButton}
+        >
+          <Text style={styles.toggleText}>
+            {showRecent ? 'Show Favorites' : 'Show Recent'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     );
   };
 
   return (
     <View style={styles.container}>
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search for words in English..."
-        value={state.query}
-        onChangeText={handleSearch}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <FlatList<ListItem>
-        data={
-          state.query
-            ? state.suggestions.length > 0
-              ? state.suggestions
-              : state.searchResults
-            : state.searchHistory
-        }
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search for a word..."
+          value={query}
+          onChangeText={handleSearch}
+          autoCapitalize="none"
+        />
+        {loading && <ActivityIndicator style={styles.loadingIndicator} />}
+      </View>
+
+      <FlatList
+        data={query.length > 0 ? results : (showRecent ? recentSearches : favorites)}
         renderItem={renderItem}
-        keyExtractor={(item, index) => {
-          if (typeof item === 'string') {
-            return `history-${item}-${index}`;
-          }
-          if (!item || !item.word) {
-            return `empty-${index}`;
-          }
-          return `word-${item.word}-${index}`;
-        }}
-        style={styles.list}
+        keyExtractor={(item) => item.word}
+        ListHeaderComponent={renderSectionHeader}
+        contentContainerStyle={styles.listContent}
       />
     </View>
   );
@@ -194,53 +135,63 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  searchIcon: {
+    marginRight: 8,
   },
   searchInput: {
-    height: 48,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 16,
+    flex: 1,
     fontSize: 16,
+    padding: 8,
+  },
+  loadingIndicator: {
+    marginLeft: 8,
+  },
+  listContent: {
+    padding: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 16,
   },
-  list: {
-    flex: 1,
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
   },
-  suggestionItem: {
-    padding: 12,
+  toggleButton: {
+    padding: 8,
+  },
+  toggleText: {
+    color: '#007AFF',
+    fontSize: 14,
+  },
+  resultItem: {
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
   wordText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
   },
   phoneticText: {
     fontSize: 14,
     color: '#666',
-    marginTop: 2,
+    marginTop: 4,
   },
   definitionText: {
     fontSize: 14,
     color: '#666',
     marginTop: 4,
-    fontStyle: 'italic',
-  },
-  partOfSpeech: {
-    fontWeight: '500',
-    color: '#444',
-  },
-  historyItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  historyText: {
-    fontSize: 16,
-    color: '#666',
   },
 });
 

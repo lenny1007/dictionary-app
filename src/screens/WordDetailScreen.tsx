@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, ScrollView, Image, TouchableOpacity, Alert } from 'react-native';
-import { useRoute } from '@react-navigation/native';
+import { StyleSheet, View, Text, ActivityIndicator, ScrollView, Image, TouchableOpacity, Alert, Share, Clipboard } from 'react-native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList, WordDetailParams } from '../types/navigation';
 import { DictionaryEntry, Meaning } from '../types/dictionary';
@@ -9,6 +9,9 @@ import { Audio } from 'expo-av';
 import { translateToChinese } from '../services/translationService';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
+import { StorageService } from '../services/storageService';
+import ErrorBoundary from '../components/ErrorBoundary';
+import LoadingScreen from '../components/LoadingScreen';
 
 type WordDetailScreenRouteProp = RouteProp<RootStackParamList, 'WordDetail'>;
 
@@ -99,9 +102,11 @@ const ZhuyinText: React.FC<ZhuyinTextProps> = ({ pairs }) => {
   );
 };
 
-export default function WordDetailScreen() {
+const WordDetailScreen: React.FC = () => {
   const route = useRoute<WordDetailScreenRouteProp>();
+  const navigation = useNavigation();
   const { entry } = route.params;
+  const [isLoading, setIsLoading] = useState(true);
   const [translations, setTranslations] = useState<TranslationState>({
     word: null,
     definitions: {},
@@ -109,6 +114,7 @@ export default function WordDetailScreen() {
   });
   const [translating, setTranslating] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
+  const [isFavorite, setIsFavorite] = useState(false);
 
   const translateDefinition = async (definition: string): Promise<ServiceTranslationResult | null> => {
     try {
@@ -120,64 +126,152 @@ export default function WordDetailScreen() {
   };
 
   useEffect(() => {
-    const translateContent = async () => {
-      setTranslating(true);
-      setTranslationError(null);
-      
+    const initializeScreen = async () => {
       try {
-        // Translate the word if it's not already in Chinese
-        const wordTranslation = !entry.translation 
-          ? await translateForKids(entry.word)
-          : { english: entry.word, pairs: [] };
-        
-        // Translate definitions
-        const translatedDefinitions: TranslationState['definitions'] = {};
-        
-        for (let meaningIndex = 0; meaningIndex < entry.meanings.length; meaningIndex++) {
-          translatedDefinitions[meaningIndex] = {};
-          const meaning = entry.meanings[meaningIndex];
-          
-          for (let defIndex = 0; defIndex < meaning.definitions.length; defIndex++) {
-            const definition = meaning.definitions[defIndex];
-            const translatedDef = await translateDefinition(definition);
-            if (translatedDef) {
-              translatedDefinitions[meaningIndex][defIndex] = translatedDef;
-            }
-          }
-        }
-        
-        // Translate examples
-        const examples = entry.meanings.flatMap((meaning: Meaning) => 
-          meaning.examples || []
-        );
-        const translatedExamples = await Promise.all(
-          examples.map(translateDefinition)
-        );
-
-        setTranslations({
-          word: wordTranslation,
-          definitions: translatedDefinitions,
-          examples: translatedExamples.filter((t: ServiceTranslationResult | null): t is ServiceTranslationResult => t !== null)
-        });
-      } catch (err) {
-        setTranslationError(err instanceof Error ? err.message : 'Translation failed');
+        setIsLoading(true);
+        await Promise.all([
+          checkFavoriteStatus(),
+          addToRecentSearches(),
+          translateContent(),
+        ]);
+      } catch (error) {
+        console.error('Error initializing screen:', error);
+        setTranslationError('Failed to load word details');
       } finally {
-        setTranslating(false);
+        setIsLoading(false);
       }
     };
 
-    translateContent();
+    initializeScreen();
   }, [entry]);
+
+  useEffect(() => {
+    // Initialize audio system
+    const initializeAudio = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
+        });
+      } catch (error) {
+        console.error('Error initializing audio:', error);
+      }
+    };
+
+    initializeAudio();
+  }, []);
+
+  const translateContent = async () => {
+    setTranslating(true);
+    setTranslationError(null);
+    
+    try {
+      // Translate the word if it's not already in Chinese
+      const wordTranslation = !entry.translation 
+        ? await translateForKids(entry.word)
+        : { english: entry.word, pairs: [] };
+      
+      // Translate definitions
+      const translatedDefinitions: TranslationState['definitions'] = {};
+      
+      for (let meaningIndex = 0; meaningIndex < entry.meanings.length; meaningIndex++) {
+        translatedDefinitions[meaningIndex] = {};
+        const meaning = entry.meanings[meaningIndex];
+        
+        for (let defIndex = 0; defIndex < meaning.definitions.length; defIndex++) {
+          const definition = meaning.definitions[defIndex];
+          const translatedDef = await translateDefinition(definition);
+          if (translatedDef) {
+            translatedDefinitions[meaningIndex][defIndex] = translatedDef;
+          }
+        }
+      }
+      
+      // Translate examples
+      const examples = entry.meanings.flatMap((meaning: Meaning) => 
+        meaning.examples || []
+      );
+      const translatedExamples = await Promise.all(
+        examples.map(translateDefinition)
+      );
+
+      setTranslations({
+        word: wordTranslation,
+        definitions: translatedDefinitions,
+        examples: translatedExamples.filter((t: ServiceTranslationResult | null): t is ServiceTranslationResult => t !== null)
+      });
+    } catch (err) {
+      setTranslationError(err instanceof Error ? err.message : 'Translation failed');
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+  const checkFavoriteStatus = async () => {
+    const storageService = StorageService.getInstance();
+    const favorite = await storageService.isFavorite(entry.word);
+    setIsFavorite(favorite);
+  };
+
+  const addToRecentSearches = async () => {
+    const storageService = StorageService.getInstance();
+    await storageService.addToRecentSearches(entry);
+  };
+
+  const toggleFavorite = async () => {
+    const storageService = StorageService.getInstance();
+    if (isFavorite) {
+      await storageService.removeFromFavorites(entry.word);
+    } else {
+      await storageService.addToFavorites(entry);
+    }
+    setIsFavorite(!isFavorite);
+  };
+
+  const copyToClipboard = (text: string) => {
+    Clipboard.setString(text);
+    Alert.alert('Copied to clipboard', text);
+  };
+
+  const shareWord = async () => {
+    try {
+      const message = `Word: ${entry.word}\n\nDefinitions:\n${entry.meanings
+        .map(meaning => `- ${meaning.definitions.join('\n  ')}`)
+        .join('\n')}`;
+
+      await Share.share({
+        message,
+        title: `Share: ${entry.word}`,
+      });
+    } catch (error) {
+      Alert.alert('Error', 'Failed to share word');
+    }
+  };
 
   const speakText = async (text: string, language: 'en' | 'zh'): Promise<void> => {
     try {
+      // Stop any currently playing speech
+      await Speech.stop();
+      
+      // Speak the new text
       await Speech.speak(text, {
         language: language === 'zh' ? 'zh-CN' : 'en-US',
         pitch: 1,
         rate: 0.75,
+        onStart: () => {
+          console.log('Started speaking:', text);
+        },
+        onDone: () => {
+          console.log('Finished speaking:', text);
+        },
+        onError: (error) => {
+          console.error('Speech error:', error);
+        },
       });
     } catch (error) {
       console.error('Error speaking text:', error);
+      Alert.alert('Error', 'Failed to play audio. Please try again.');
     }
   };
 
@@ -187,98 +281,186 @@ export default function WordDetailScreen() {
     return (
       <View style={styles.translationContainer}>
         {showEnglish && (
-          <TouchableOpacity 
-            onPress={() => speakText(translation.english, 'en')}
-            style={styles.textWithIcon}
-          >
-            <Text style={styles.englishText}>{translation.english}</Text>
-            <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
-          </TouchableOpacity>
+          <View style={styles.textWithIcon}>
+            <TouchableOpacity 
+              onPress={() => speakText(translation.english, 'en')}
+              style={styles.textContainer}
+            >
+              <Text style={styles.englishText}>{translation.english}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={() => speakText(translation.english, 'en')}
+              style={styles.iconButton}
+            >
+              <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={() => copyToClipboard(translation.english)}
+              style={styles.iconButton}
+            >
+              <Ionicons name="copy-outline" size={20} color="#666" />
+            </TouchableOpacity>
+          </View>
         )}
         {translation.pairs.length > 0 && (
-          <TouchableOpacity 
-            onPress={() => speakText(translation.pairs.map(p => p.character).join(''), 'zh')}
-            style={[styles.textWithIcon, styles.zhuyinContainer]}
-          >
-            <ZhuyinText pairs={translation.pairs} />
-            <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
-          </TouchableOpacity>
+          <View style={[styles.textWithIcon, styles.zhuyinContainer]}>
+            <TouchableOpacity 
+              onPress={() => speakText(translation.pairs.map(p => p.character).join(''), 'zh')}
+              style={styles.textContainer}
+            >
+              <ZhuyinText pairs={translation.pairs} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={() => speakText(translation.pairs.map(p => p.character).join(''), 'zh')}
+              style={styles.iconButton}
+            >
+              <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={() => copyToClipboard(translation.pairs.map(p => p.character).join(''))}
+              style={styles.iconButton}
+            >
+              <Ionicons name="copy-outline" size={20} color="#666" />
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     );
   };
 
-  return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity 
-          onPress={() => speakText(entry.word, 'en')}
-          style={styles.textWithIcon}
-        >
-          <Text style={styles.wordText}>{entry.word}</Text>
-          <Ionicons name="volume-medium-outline" size={24} color="#2D3436" />
-        </TouchableOpacity>
-        {entry.phonetic && (
-          <Text style={styles.phoneticText}>{entry.phonetic}</Text>
-        )}
-      </View>
+  if (isLoading) {
+    return <LoadingScreen message="Loading word details..." />;
+  }
 
-      {translating ? (
-        <ActivityIndicator size="large" color="#0000ff" style={styles.loader} />
-      ) : translationError ? (
+  if (translationError) {
+    return (
+      <View style={styles.errorContainer}>
         <Text style={styles.errorText}>{translationError}</Text>
-      ) : (
-        <>
-          {entry.translation && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Translation</Text>
-              <TouchableOpacity 
-                onPress={() => speakText(entry.translation, 'zh')}
-                style={styles.textWithIcon}
-              >
-                <Text style={styles.translationText}>{entry.translation}</Text>
-                <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
-              </TouchableOpacity>
-            </View>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={() => {
+            setTranslationError(null);
+            setIsLoading(true);
+            translateContent();
+          }}
+        >
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <ErrorBoundary>
+      <ScrollView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            onPress={() => speakText(entry.word, 'en')}
+            style={styles.textWithIcon}
+          >
+            <Text style={styles.wordText}>{entry.word}</Text>
+            <Ionicons name="volume-medium-outline" size={24} color="#2D3436" />
+          </TouchableOpacity>
+          {entry.phonetic && (
+            <Text style={styles.phoneticText}>{entry.phonetic}</Text>
           )}
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Meanings</Text>
-            {entry.meanings.map((meaning: Meaning, meaningIndex: number) => (
-              <View key={meaningIndex} style={styles.meaningContainer}>
-                <Text style={styles.partOfSpeech}>{meaning.partOfSpeech}</Text>
-                {meaning.definitions.map((definition: string, defIndex: number) => (
-                  <View key={defIndex} style={styles.definitionContainer}>
-                    <TouchableOpacity 
-                      onPress={() => speakText(definition, 'en')}
-                      style={styles.textWithIcon}
-                    >
-                      <Text style={styles.definitionText}>{definition}</Text>
-                      <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
-                    </TouchableOpacity>
-                    {translations.definitions[meaningIndex]?.[defIndex] && 
-                      renderTranslation(translations.definitions[meaningIndex][defIndex], false, false)}
-                  </View>
-                ))}
-              </View>
-            ))}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity onPress={toggleFavorite} style={styles.iconButton}>
+              <Ionicons
+                name={isFavorite ? 'heart' : 'heart-outline'}
+                size={24}
+                color={isFavorite ? '#FF3B30' : '#000'}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={shareWord} style={styles.iconButton}>
+              <Ionicons name="share-outline" size={24} color="#000" />
+            </TouchableOpacity>
           </View>
+        </View>
 
-          {translations.examples.length > 0 && (
+        {translating ? (
+          <ActivityIndicator size="large" color="#0000ff" style={styles.loader} />
+        ) : (
+          <>
+            {entry.translation && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Explanation</Text>
+                <View style={styles.textWithIcon}>
+                  <TouchableOpacity 
+                    onPress={() => speakText(entry.translation, 'en')}
+                    style={styles.textContainer}
+                  >
+                    <Text style={styles.translationText}>{entry.translation}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    onPress={() => speakText(entry.translation, 'en')}
+                    style={styles.iconButton}
+                  >
+                    <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    onPress={() => copyToClipboard(entry.translation)}
+                    style={styles.iconButton}
+                  >
+                    <Ionicons name="copy-outline" size={20} color="#666" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Examples</Text>
-              {translations.examples.map((example, index) => (
-                <View key={index} style={styles.exampleContainer}>
-                  {renderTranslation(example, true)}
+              <Text style={styles.sectionTitle}>Meanings</Text>
+              {entry.meanings.map((meaning: Meaning, meaningIndex: number) => (
+                <View key={meaningIndex} style={styles.meaningContainer}>
+                  <Text style={styles.partOfSpeech}>{meaning.partOfSpeech}</Text>
+                  {meaning.definitions.map((definition: string, defIndex: number) => (
+                    <View key={defIndex} style={styles.definitionContainer}>
+                      <View style={styles.textWithIcon}>
+                        <TouchableOpacity 
+                          onPress={() => speakText(definition, 'en')}
+                          style={styles.textContainer}
+                        >
+                          <Text style={styles.definitionText}>{definition}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          onPress={() => speakText(definition, 'en')}
+                          style={styles.iconButton}
+                        >
+                          <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          onPress={() => copyToClipboard(definition)}
+                          style={styles.iconButton}
+                        >
+                          <Ionicons name="copy-outline" size={20} color="#666" />
+                        </TouchableOpacity>
+                      </View>
+                      {translations.definitions[meaningIndex]?.[defIndex] && 
+                        renderTranslation(translations.definitions[meaningIndex][defIndex], false, false)}
+                    </View>
+                  ))}
                 </View>
               ))}
             </View>
-          )}
-        </>
-      )}
-    </ScrollView>
+
+            {translations.examples.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Examples</Text>
+                {translations.examples.map((example, index) => (
+                  <View key={index} style={styles.exampleContainer}>
+                    {renderTranslation(example, true)}
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
+        )}
+      </ScrollView>
+    </ErrorBoundary>
   );
-}
+};
+
+export default WordDetailScreen;
 
 /*
  * ⚠️ IMPORTANT WARNING ⚠️
@@ -329,6 +511,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   wordText: {
     fontSize: 36,
@@ -412,9 +597,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
   },
+  textContainer: {
+    flex: 1,
+    marginRight: 8,
+  },
   textWithIcon: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 8,
   },
   zhuyinContainer: {
     marginTop: 0,
@@ -422,14 +612,29 @@ const styles = StyleSheet.create({
   loader: {
     marginTop: 24,
   },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#fff',
+  },
   errorText: {
-    color: '#FF6B6B',
     fontSize: 16,
+    color: '#FF3B30',
     textAlign: 'center',
-    marginTop: 24,
-    padding: 16,
-    backgroundColor: '#FFE3E3',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   zhuyinTextContainer: {
     flexDirection: 'row',
@@ -526,5 +731,12 @@ const styles = StyleSheet.create({
   normalToneTriple: {
     top: 18,
     right: -13,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+  },
+  iconButton: {
+    padding: 8,
+    marginLeft: 4,
   },
 }); 

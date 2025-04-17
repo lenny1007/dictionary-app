@@ -2,10 +2,20 @@ import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DictionaryEntry, Meaning } from '../types/dictionary';
+import { CacheService } from './cacheService';
+import { TrieService } from './trieService';
 
 interface SearchResult {
   entry: DictionaryEntry;
   score: number;
+}
+
+interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
 }
 
 export class SearchService {
@@ -14,8 +24,19 @@ export class SearchService {
   private readonly SEARCH_HISTORY_KEY = '@search_history';
   private readonly MAX_HISTORY_ITEMS = 20;
   private isInitialized = false;
+  private cacheService: CacheService;
+  private trieService: TrieService;
+  private readonly DICTIONARY_CACHE_KEY = 'dictionary_data';
+  private readonly SEARCH_RESULT_CACHE_KEY = 'search_results';
 
-  private constructor() {}
+  private constructor() {
+    this.cacheService = CacheService.getInstance({
+      key: '@dictionary_cache',
+      ttl: 24 * 60 * 60 * 1000, // 24 hours
+      maxSize: 1000
+    });
+    this.trieService = TrieService.getInstance();
+  }
 
   public static getInstance(): SearchService {
     if (!SearchService.instance) {
@@ -28,6 +49,16 @@ export class SearchService {
     if (this.isInitialized) return;
 
     try {
+      // Try to get dictionary from cache first
+      const cachedDictionary = await this.cacheService.get<DictionaryEntry[]>(this.DICTIONARY_CACHE_KEY);
+      if (cachedDictionary) {
+        this.dictionary = cachedDictionary;
+        await this.trieService.initialize(this.dictionary);
+        this.isInitialized = true;
+        return;
+      }
+
+      // If not in cache, load from file
       const rawDictionary = require('../../assets/gpt_dict.json');
       // Transform the raw dictionary data to match our DictionaryEntry type
       this.dictionary = rawDictionary.map((entry: any) => {
@@ -59,6 +90,9 @@ export class SearchService {
         }
       }).filter(Boolean) as DictionaryEntry[];
 
+      // Cache the dictionary data
+      await this.cacheService.set(this.DICTIONARY_CACHE_KEY, this.dictionary);
+      await this.trieService.initialize(this.dictionary);
       this.isInitialized = true;
     } catch (error) {
       console.error('Error initializing dictionary:', error);
@@ -111,27 +145,72 @@ export class SearchService {
     return score;
   }
 
-  public async search(query: string): Promise<DictionaryEntry[]> {
+  public async search(
+    query: string,
+    page: number = 1,
+    pageSize: number = 20
+  ): Promise<PaginatedResult<DictionaryEntry>> {
     if (!this.isInitialized) {
       await this.initialize();
     }
 
     const normalizedQuery = this.normalizeText(query);
     if (!normalizedQuery) {
-      return [];
+      return {
+        items: [],
+        total: 0,
+        page,
+        pageSize,
+        hasMore: false
+      };
     }
 
-    const results = this.dictionary
-      .map(entry => ({
-        entry,
-        score: this.calculateMatchScore(entry, normalizedQuery)
-      }))
-      .filter(result => result.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .map(result => result.entry);
+    // Try to get results from cache
+    const cacheKey = `${this.SEARCH_RESULT_CACHE_KEY}:${normalizedQuery}`;
+    const cachedResults = await this.cacheService.get<DictionaryEntry[]>(cacheKey);
+    
+    let results: DictionaryEntry[];
+    if (cachedResults) {
+      results = cachedResults;
+    } else {
+      // Use trie for initial search
+      const trieResults = this.trieService.search(normalizedQuery);
+      
+      // If no results from trie, try fuzzy search
+      if (trieResults.length === 0) {
+        results = this.trieService.fuzzySearch(normalizedQuery);
+      } else {
+        results = trieResults;
+      }
 
+      // Sort results by score
+      results = results
+        .map(entry => ({
+          entry,
+          score: this.calculateMatchScore(entry, normalizedQuery)
+        }))
+        .sort((a, b) => b.score - a.score)
+        .map(result => result.entry);
+
+      // Cache the results
+      await this.cacheService.set(cacheKey, results);
+    }
+
+    // Add to search history
     await this.addToSearchHistory(query);
-    return results;
+
+    // Calculate pagination
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedItems = results.slice(startIndex, endIndex);
+
+    return {
+      items: paginatedItems,
+      total: results.length,
+      page,
+      pageSize,
+      hasMore: endIndex < results.length
+    };
   }
 
   public async getAutocompleteSuggestions(query: string): Promise<DictionaryEntry[]> {
@@ -144,9 +223,30 @@ export class SearchService {
       return [];
     }
 
-    return this.dictionary
-      .filter(entry => this.normalizeText(entry.word).startsWith(normalizedQuery))
-      .slice(0, 5);
+    // Try to get suggestions from cache
+    const cacheKey = `autocomplete:${normalizedQuery}`;
+    const cachedSuggestions = await this.cacheService.get<DictionaryEntry[]>(cacheKey);
+    if (cachedSuggestions) {
+      return cachedSuggestions;
+    }
+
+    // Use trie for suggestions
+    const suggestions = this.trieService.search(normalizedQuery).slice(0, 5);
+
+    // Cache the suggestions
+    await this.cacheService.set(cacheKey, suggestions);
+    return suggestions;
+  }
+
+  private async addToSearchHistory(query: string): Promise<void> {
+    try {
+      const history = await this.getSearchHistory();
+      const newHistory = [query, ...history.filter(item => item !== query)]
+        .slice(0, this.MAX_HISTORY_ITEMS);
+      await AsyncStorage.setItem(this.SEARCH_HISTORY_KEY, JSON.stringify(newHistory));
+    } catch (error) {
+      console.error('Error adding to search history:', error);
+    }
   }
 
   public async getSearchHistory(): Promise<string[]> {
@@ -159,15 +259,11 @@ export class SearchService {
     }
   }
 
-  private async addToSearchHistory(query: string): Promise<void> {
+  public async clearSearchHistory(): Promise<void> {
     try {
-      const history = await this.getSearchHistory();
-      const normalizedQuery = this.normalizeText(query);
-      const newHistory = [normalizedQuery, ...history.filter(item => item !== normalizedQuery)]
-        .slice(0, this.MAX_HISTORY_ITEMS);
-      await AsyncStorage.setItem(this.SEARCH_HISTORY_KEY, JSON.stringify(newHistory));
+      await AsyncStorage.removeItem(this.SEARCH_HISTORY_KEY);
     } catch (error) {
-      console.error('Error adding to search history:', error);
+      console.error('Error clearing search history:', error);
     }
   }
 } 
