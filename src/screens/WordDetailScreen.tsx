@@ -402,13 +402,13 @@ const WordDetailScreen: React.FC = () => {
                 <Text style={styles.sectionTitle}>Explanation</Text>
                 <View style={styles.textWithIcon}>
                   <TouchableOpacity 
-                    onPress={() => speakText(entry.translation, 'zh')}
+                    onPress={() => speakText(entry.translation, 'en')}
                     style={styles.textContainer}
                   >
                     <Text style={styles.translationText}>{entry.translation}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
-                    onPress={() => speakText(entry.translation, 'zh')}
+                    onPress={() => speakText(entry.translation, 'en')}
                     style={styles.iconButton}
                   >
                     <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
@@ -418,10 +418,10 @@ const WordDetailScreen: React.FC = () => {
                     style={styles.iconButton}
                   >
                     <Ionicons name="copy-outline" size={20} color="#666" />
-        </TouchableOpacity>
-      </View>
-        </View>
-      )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
       
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Meanings</Text>
