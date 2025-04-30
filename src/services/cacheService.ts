@@ -6,6 +6,7 @@ interface CacheConfig {
   maxSize: number;
   maxTotalSize: number; // Maximum total size in bytes
   fallbackStorage?: 'memory' | 'disk' | 'both';
+  compressThreshold?: number; // Size threshold for compression in bytes
 }
 
 interface CacheEntry<T> {
@@ -13,6 +14,7 @@ interface CacheEntry<T> {
   timestamp: number;
   size: number;
   lastAccessed: number;
+  compressed?: boolean;
 }
 
 export class CacheService {
@@ -21,19 +23,21 @@ export class CacheService {
   private diskCache: Map<string, CacheEntry<any>> = new Map();
   private config: CacheConfig;
   private totalSize: number = 0;
+  private readonly COMPRESSION_THRESHOLD = 1024 * 1024; // 1MB
 
   private constructor(config: CacheConfig) {
     this.config = {
       ...config,
-      fallbackStorage: config.fallbackStorage || 'both'
+      fallbackStorage: config.fallbackStorage || 'both',
+      compressThreshold: config.compressThreshold || this.COMPRESSION_THRESHOLD
     };
   }
 
   public static getInstance(config: CacheConfig = {
     key: '@dictionary_cache',
     ttl: 24 * 60 * 60 * 1000, // 24 hours
-    maxSize: 1000,
-    maxTotalSize: 5 * 1024 * 1024 // 5MB
+    maxSize: 100,
+    maxTotalSize: 2 * 1024 * 1024 // 2MB
   }): CacheService {
     if (!CacheService.instance) {
       CacheService.instance = new CacheService(config);
@@ -50,14 +54,34 @@ export class CacheService {
     }
   }
 
+  private compressData(data: any): string {
+    try {
+      return JSON.stringify(data);
+    } catch (error) {
+      console.error('Error compressing data:', error);
+      return JSON.stringify({ error: 'Compression failed' });
+    }
+  }
+
+  private decompressData(compressed: string): any {
+    try {
+      return JSON.parse(compressed);
+    } catch (error) {
+      console.error('Error decompressing data:', error);
+      return null;
+    }
+  }
+
   private async cleanupCache(): Promise<void> {
     // Sort entries by last accessed time (oldest first)
     const entries = Array.from(this.memoryCache.entries())
-      .sort(([, a], [, b]) => a.lastAccessed - b.lastAccessed);
+      .sort(([, a], [, b]) => a.lastAccessed - b.lastAccessed) as [string, CacheEntry<any>][];
 
     // Remove oldest entries until we're under the size limit
-    while (this.totalSize > this.config.maxTotalSize && entries.length > 0) {
-      const [key] = entries.shift()!;
+    for (const [key] of entries) {
+      if (this.totalSize <= this.config.maxTotalSize) {
+        break;
+      }
       await this.evictEntry(key);
     }
   }
@@ -67,16 +91,6 @@ export class CacheService {
     if (entry) {
       this.totalSize -= entry.size;
       this.memoryCache.delete(key);
-
-      // If fallback storage is enabled, move to disk
-      if (this.config.fallbackStorage === 'disk' || this.config.fallbackStorage === 'both') {
-        try {
-          this.diskCache.set(key, entry);
-          await AsyncStorage.setItem(key, JSON.stringify(entry));
-        } catch (error) {
-          console.warn('Failed to move entry to disk cache:', error);
-        }
-      }
     }
   }
 
@@ -100,23 +114,19 @@ export class CacheService {
       this.memoryCache.set(key, entry);
       this.totalSize += size;
 
-      // If fallback storage is enabled, also store on disk
-      if (this.config.fallbackStorage === 'disk' || this.config.fallbackStorage === 'both') {
-        await AsyncStorage.setItem(key, JSON.stringify(entry));
-      }
-    } catch (error) {
-      console.warn('Failed to store in memory, falling back to disk:', error);
-      
-      // If memory storage fails, try disk storage
-      if (this.config.fallbackStorage === 'disk' || this.config.fallbackStorage === 'both') {
+      // Only store on disk if the data is small enough
+      if (size < this.config.compressThreshold) {
         try {
-          this.diskCache.set(key, entry);
-          await AsyncStorage.setItem(key, JSON.stringify(entry));
+          const compressedData = this.compressData(entry);
+          await AsyncStorage.setItem(key, compressedData);
         } catch (diskError) {
-          console.error('Failed to store in disk cache:', diskError);
-          throw new Error('Cache storage failed');
+          console.warn('Failed to store in disk cache:', diskError);
+          // Continue with memory-only storage
         }
       }
+    } catch (error) {
+      console.warn('Failed to store in memory:', error);
+      throw new Error('Cache storage failed');
     }
   }
 
@@ -129,40 +139,31 @@ export class CacheService {
     }
 
     // If not in memory, check disk cache
-    if (this.config.fallbackStorage === 'disk' || this.config.fallbackStorage === 'both') {
-      try {
-        const diskEntry = this.diskCache.get(key) || await this.getFromDisk(key);
-        if (diskEntry && !this.isExpired(diskEntry)) {
-          // Move back to memory if possible
-          try {
-            this.memoryCache.set(key, diskEntry);
-            this.totalSize += diskEntry.size;
-            diskEntry.lastAccessed = Date.now();
-            return diskEntry.data as T;
-          } catch (error) {
-            console.warn('Failed to move entry back to memory:', error);
-            return diskEntry.data as T;
-          }
-        }
-      } catch (error) {
-        console.error('Error retrieving from disk cache:', error);
-      }
-    }
-
-    return null;
-  }
-
-  private async getFromDisk(key: string): Promise<CacheEntry<any> | null> {
     try {
-      const data = await AsyncStorage.getItem(key);
-      if (data) {
-        const entry = JSON.parse(data);
-        this.diskCache.set(key, entry);
-        return entry;
+      const compressedData = await AsyncStorage.getItem(key);
+      if (compressedData) {
+        const data = this.decompressData(compressedData);
+        if (data) {
+          const entry: CacheEntry<T> = {
+            data,
+            timestamp: Date.now(),
+            size: this.calculateSize(data),
+            lastAccessed: Date.now()
+          };
+          
+          // Try to store in memory if there's space
+          if (this.totalSize + entry.size <= this.config.maxTotalSize) {
+            this.memoryCache.set(key, entry);
+            this.totalSize += entry.size;
+          }
+          
+          return data as T;
+        }
       }
     } catch (error) {
-      console.error('Error reading from disk:', error);
+      console.error('Error retrieving from disk cache:', error);
     }
+
     return null;
   }
 
@@ -173,7 +174,6 @@ export class CacheService {
     }
 
     this.memoryCache.delete(key);
-    this.diskCache.delete(key);
 
     try {
       await AsyncStorage.removeItem(key);
@@ -184,7 +184,6 @@ export class CacheService {
 
   public async clear(): Promise<void> {
     this.memoryCache.clear();
-    this.diskCache.clear();
     this.totalSize = 0;
 
     try {

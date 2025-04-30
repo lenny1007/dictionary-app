@@ -10,6 +10,11 @@ interface Props {
   onImageClick?: (image: ImageResult) => void;
 }
 
+// Extend ImageResult to include requireId for local images
+interface LocalImageResult extends ImageResult {
+  requireId: number;
+}
+
 export const WordImageGallery: React.FC<Props> = ({ word, style, onImageClick }) => {
   const [images, setImages] = useState<ImageResult[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,8 +56,11 @@ export const WordImageGallery: React.FC<Props> = ({ word, style, onImageClick })
 
     let imgSrc = image.url;
     if (image.source === 'local') {
-      // Use the pre-imported image from imageMapping
-      imgSrc = imageMapping[image.url] || image.url;
+      // For local images, use the imageMapping to get the required image
+      const localImage = imageMapping[image.url];
+      if (localImage) {
+        imgSrc = localImage;
+      }
     }
 
     return (
@@ -77,6 +85,10 @@ export const WordImageGallery: React.FC<Props> = ({ word, style, onImageClick })
 
   if (error) {
     return <div>Error: {error}</div>;
+  }
+
+  if (images.length === 0) {
+    return <div>No images available</div>;
   }
 
   return (

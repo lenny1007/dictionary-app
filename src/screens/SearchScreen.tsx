@@ -123,7 +123,7 @@ const SearchScreen: React.FC = () => {
       <FlatList
         data={query.length > 0 ? results : (showRecent ? recentSearches : favorites)}
         renderItem={renderItem}
-        keyExtractor={(item) => item.word}
+        keyExtractor={(item, index) => `${item.word}-${index}`}
         ListHeaderComponent={renderSectionHeader}
         contentContainerStyle={styles.listContent}
       />

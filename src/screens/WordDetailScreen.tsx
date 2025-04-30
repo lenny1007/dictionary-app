@@ -12,6 +12,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { StorageService } from '../services/storageService';
 import ErrorBoundary from '../components/ErrorBoundary';
 import LoadingScreen from '../components/LoadingScreen';
+import { WordImageGallery } from '../components/WordImageGallery';
+import { imageService } from '../services/imageService';
 
 type WordDetailScreenRouteProp = RouteProp<RootStackParamList, 'WordDetail'>;
 
@@ -102,6 +104,14 @@ const ZhuyinText: React.FC<ZhuyinTextProps> = ({ pairs }) => {
   );
 };
 
+const getImageSource = async (word: string) => {
+  const imageResult = await imageService.getImageForWord(word);
+  if (imageResult) {
+    return { uri: imageResult.url };
+  }
+  return { uri: `https://api.dictionaryapi.dev/media/pronunciations/${word.toLowerCase()}.png` };
+};
+
 const WordDetailScreen: React.FC = () => {
   const route = useRoute<WordDetailScreenRouteProp>();
   const navigation = useNavigation();
@@ -162,9 +172,9 @@ const WordDetailScreen: React.FC = () => {
     initializeAudio();
   }, []);
 
-  const translateContent = async () => {
-    setTranslating(true);
-    setTranslationError(null);
+    const translateContent = async () => {
+      setTranslating(true);
+      setTranslationError(null);
     
     try {
       // Translate the word if it's not already in Chinese
@@ -192,21 +202,21 @@ const WordDetailScreen: React.FC = () => {
       const examples = entry.meanings.flatMap((meaning: Meaning) => 
         meaning.examples || []
       );
-      const translatedExamples = await Promise.all(
+        const translatedExamples = await Promise.all(
         examples.map(translateDefinition)
-      );
+        );
 
-      setTranslations({
-        word: wordTranslation,
-        definitions: translatedDefinitions,
+        setTranslations({
+          word: wordTranslation,
+          definitions: translatedDefinitions,
         examples: translatedExamples.filter((t: ServiceTranslationResult | null): t is ServiceTranslationResult => t !== null)
-      });
-    } catch (err) {
+        });
+      } catch (err) {
       setTranslationError(err instanceof Error ? err.message : 'Translation failed');
-    } finally {
-      setTranslating(false);
-    }
-  };
+      } finally {
+        setTranslating(false);
+      }
+    };
 
   const checkFavoriteStatus = async () => {
     const storageService = StorageService.getInstance();
@@ -308,7 +318,9 @@ const WordDetailScreen: React.FC = () => {
               onPress={() => speakText(translation.pairs.map(p => p.character).join(''), 'zh')}
               style={styles.textContainer}
             >
-              <ZhuyinText pairs={translation.pairs} />
+              <Text>
+                <ZhuyinText pairs={translation.pairs} />
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity 
               onPress={() => speakText(translation.pairs.map(p => p.character).join(''), 'zh')}
@@ -322,7 +334,7 @@ const WordDetailScreen: React.FC = () => {
             >
               <Ionicons name="copy-outline" size={20} color="#666" />
             </TouchableOpacity>
-          </View>
+      </View>
         )}
       </View>
     );
@@ -352,32 +364,35 @@ const WordDetailScreen: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <ScrollView style={styles.container}>
+    <ScrollView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity 
-            onPress={() => speakText(entry.word, 'en')}
-            style={styles.textWithIcon}
-          >
+      <View style={styles.wordContainer}>
             <Text style={styles.wordText}>{entry.word}</Text>
+            <View style={styles.actionButtons}>
+              <TouchableOpacity onPress={toggleFavorite} style={styles.iconButton}>
+                <Ionicons
+                  name={isFavorite ? 'heart' : 'heart-outline'}
+                  size={24}
+                  color={isFavorite ? '#FF3B30' : '#000'}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={shareWord} style={styles.iconButton}>
+                <Ionicons name="share-outline" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+        <TouchableOpacity 
+            onPress={() => speakText(entry.word, 'en')}
+            style={styles.phoneticContainer}
+          >
+            <Text style={styles.phoneticText}>{entry.phonetic}</Text>
             <Ionicons name="volume-medium-outline" size={24} color="#2D3436" />
           </TouchableOpacity>
-          {entry.phonetic && (
-            <Text style={styles.phoneticText}>{entry.phonetic}</Text>
-          )}
-          <View style={styles.actionButtons}>
-            <TouchableOpacity onPress={toggleFavorite} style={styles.iconButton}>
-              <Ionicons
-                name={isFavorite ? 'heart' : 'heart-outline'}
-                size={24}
-                color={isFavorite ? '#FF3B30' : '#000'}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={shareWord} style={styles.iconButton}>
-              <Ionicons name="share-outline" size={24} color="#000" />
-            </TouchableOpacity>
-          </View>
-        </View>
 
+          <WordImageGallery word={entry.word} style={styles.wordImage} />
+        </View>
+        
         {translating ? (
           <ActivityIndicator size="large" color="#0000ff" style={styles.loader} />
         ) : (
@@ -387,13 +402,13 @@ const WordDetailScreen: React.FC = () => {
                 <Text style={styles.sectionTitle}>Explanation</Text>
                 <View style={styles.textWithIcon}>
                   <TouchableOpacity 
-                    onPress={() => speakText(entry.translation, 'en')}
+                    onPress={() => speakText(entry.translation, 'zh')}
                     style={styles.textContainer}
                   >
                     <Text style={styles.translationText}>{entry.translation}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
-                    onPress={() => speakText(entry.translation, 'en')}
+                    onPress={() => speakText(entry.translation, 'zh')}
                     style={styles.iconButton}
                   >
                     <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
@@ -403,16 +418,16 @@ const WordDetailScreen: React.FC = () => {
                     style={styles.iconButton}
                   >
                     <Ionicons name="copy-outline" size={20} color="#666" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
+        </TouchableOpacity>
+      </View>
+        </View>
+      )}
+      
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Meanings</Text>
               {entry.meanings.map((meaning: Meaning, meaningIndex: number) => (
                 <View key={meaningIndex} style={styles.meaningContainer}>
-                  <Text style={styles.partOfSpeech}>{meaning.partOfSpeech}</Text>
+            <Text style={styles.partOfSpeech}>{meaning.partOfSpeech}</Text>
                   {meaning.definitions.map((definition: string, defIndex: number) => (
                     <View key={defIndex} style={styles.definitionContainer}>
                       <View style={styles.textWithIcon}>
@@ -437,11 +452,11 @@ const WordDetailScreen: React.FC = () => {
                       </View>
                       {translations.definitions[meaningIndex]?.[defIndex] && 
                         renderTranslation(translations.definitions[meaningIndex][defIndex], false, false)}
-                    </View>
+          </View>
                   ))}
                 </View>
               ))}
-            </View>
+                  </View>
 
             {translations.examples.length > 0 && (
               <View style={styles.section}>
@@ -449,13 +464,13 @@ const WordDetailScreen: React.FC = () => {
                 {translations.examples.map((example, index) => (
                   <View key={index} style={styles.exampleContainer}>
                     {renderTranslation(example, true)}
-                  </View>
-                ))}
-              </View>
-            )}
+        </View>
+      ))}
+        </View>
+      )}
           </>
-        )}
-      </ScrollView>
+      )}
+    </ScrollView>
     </ErrorBoundary>
   );
 };
@@ -511,21 +526,37 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  wordContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 16,
   },
   wordText: {
     fontSize: 36,
     fontWeight: 'bold',
     color: '#2D3436',
-    marginRight: 8,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  phoneticContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   phoneticText: {
     fontSize: 18,
     color: '#636E72',
-    marginTop: 8,
     fontStyle: 'italic',
+    marginRight: 8,
+  },
+  wordImage: {
+    width: '100%',
+    marginTop: 0,
+    marginBottom: 0,
   },
   section: {
     backgroundColor: '#FFFFFF',
@@ -731,9 +762,6 @@ const styles = StyleSheet.create({
   normalToneTriple: {
     top: 18,
     right: -13,
-  },
-  actionButtons: {
-    flexDirection: 'row',
   },
   iconButton: {
     padding: 8,

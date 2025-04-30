@@ -76,3 +76,6 @@ local.properties
 *.swp
 *.swo
 *~
+
+# Web build generated files
+public/assets/images/

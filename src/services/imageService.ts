@@ -13,6 +13,10 @@ console.log('localImages loaded:', Object.keys(localImages).length, 'entries');
 const testLocalImage = imageMapping['aardvark-0.jpg'];
 console.log('Test local image require result:', testLocalImage);
 
+type LocalImagesType = {
+  [key: string]: string[];
+};
+
 interface WikimediaImage {
   name: string;
   url: string;
@@ -51,6 +55,33 @@ export class ImageService {
     });
   }
 
+  private getLocalImage(word: string): ImageResult | null {
+    try {
+      const wordKey = word.toLowerCase();
+      const localImageFiles = (localImages as LocalImages)[wordKey];
+      
+      if (!localImageFiles || localImageFiles.length === 0) {
+        console.log('No local images found for word:', wordKey);
+        return null;
+      }
+
+      // Get the first available image
+      const imageName = localImageFiles[0];
+      console.log('Found local image:', imageName);
+
+      return {
+        url: imageName,
+        source: 'local',
+        word,
+        width: 300,
+        height: 300
+      };
+    } catch (error) {
+      console.error('Error getting local image:', error);
+      return null;
+    }
+  }
+
   async getImageForWord(word: string): Promise<ImageResult | null> {
     try {
       console.log('Getting image for word:', word);
@@ -60,25 +91,19 @@ export class ImageService {
       console.log('Checking cache with key:', cacheKey);
       const cachedImage = await this.cacheService.get<ImageResult>(cacheKey);
       if (cachedImage && cachedImage.url) {
-        console.log('Found cached image:', {
-          url: cachedImage.url,
-          source: cachedImage.source,
-          width: cachedImage.width,
-          height: cachedImage.height
-        });
+        console.log('Found cached image:', cachedImage);
         return cachedImage;
       }
       console.log('No cached image found');
 
-      // Check local bundled images for common words
-      const localImage = await this.getLocalImage(word);
+      // Check local bundled images
+      const localImage = this.getLocalImage(word);
       if (localImage) {
         console.log('Found local image:', localImage);
-        const imageWithTimestamp = {
+        await this.cacheService.set(cacheKey, {
           ...localImage,
           timestamp: Date.now()
-        };
-        await this.cacheService.set(cacheKey, imageWithTimestamp);
+        });
         return localImage;
       }
 
@@ -86,15 +111,12 @@ export class ImageService {
       const apiImages = await this.fetchImageFromAPI(word);
       if (apiImages.length > 0) {
         console.log('Found API images:', apiImages);
-        // Cache the API result with timestamp
-        const imageWithTimestamp = {
-          ...apiImages[0],
+        const apiImage = apiImages[0];
+        await this.cacheService.set(cacheKey, {
+          ...apiImage,
           timestamp: Date.now()
-        };
-        console.log('Caching API result with key:', cacheKey);
-        await this.cacheService.set(cacheKey, imageWithTimestamp);
-        console.log('Cache set complete');
-        return apiImages[0];
+        });
+        return apiImage;
       }
 
       console.log('No image found for word:', word);
@@ -105,40 +127,24 @@ export class ImageService {
     }
   }
 
-  private async getLocalImage(word: string): Promise<ImageResult | null> {
-    try {
-      const wordKey = word.toLowerCase();
-      console.log('Checking local images for word:', wordKey);
-      
-      const localImageFiles = (localImages as LocalImages)[wordKey];
-      if (!localImageFiles || !localImageFiles.length) {
-        console.log('Word not found in local images registry:', wordKey);
-        return null;
-      }
-
-      const imageName = localImageFiles[0];
-      console.log('Found local image name:', imageName);
-      
-      if (!imageMapping[imageName]) {
-        console.log('Image not found in mapping:', imageName);
-        return null;
-      }
-
-      // Get the image from the mapping
-      const imageSource = imageMapping[imageName];
-      console.log('Found image source:', imageSource);
-
-      return {
-        url: imageName,
-        source: 'local',
-        word,
-        width: 300,  // We'll use fixed dimensions for local images
-        height: 300
-      };
-    } catch (error) {
-      console.error('Error getting local image:', error);
-      return null;
+  async getImagesForWord(word: string): Promise<ImageResult[]> {
+    const images: ImageResult[] = [];
+    
+    // Get local images first
+    const localImage = this.getLocalImage(word);
+    if (localImage) {
+      images.push(localImage);
     }
+
+    // Get remote images
+    try {
+      const remoteImages = await this.fetchImageFromAPI(word);
+      images.push(...remoteImages);
+    } catch (err) {
+      console.error('Error fetching remote images:', err);
+    }
+
+    return images;
   }
 
   async fetchImageFromAPI(word: string): Promise<ImageResult[]> {
@@ -302,32 +308,6 @@ export class ImageService {
     }
     
     return null;
-  }
-
-  async getImagesForWord(word: string): Promise<ImageResult[]> {
-    const images: ImageResult[] = [];
-    
-    // Get local images
-    const localImageFiles = (localImages as LocalImages)[word.toLowerCase()];
-    if (localImageFiles) {
-      images.push(...localImageFiles.map(filename => ({
-        url: filename,
-        source: 'local' as const,
-        word,
-        width: 300,
-        height: 300
-      })));
-    }
-
-    // Get remote images
-    try {
-      const remoteImages = await this.fetchImageFromAPI(word);
-      images.push(...remoteImages);
-    } catch (err) {
-      console.error('Error fetching remote images:', err);
-    }
-
-    return images;
   }
 }
 

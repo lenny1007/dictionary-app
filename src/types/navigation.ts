@@ -10,6 +10,6 @@ export type RootStackParamList = {
   Search: undefined;
   WordDetail: WordDetailParams;
   Favorites: undefined;
-};
+}; 
 
 export type RootStackNavigationProp = NativeStackNavigationProp<RootStackParamList>; 

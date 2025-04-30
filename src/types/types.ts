@@ -1,12 +1,13 @@
 export interface ImageResult {
   url: string;
-  source: 'local' | 'wikimedia' | 'google' | 'unsplash';
+  source: 'local' | 'google' | 'unsplash' | 'wikimedia';
   word: string;
-  width?: number;
-  height?: number;
+  width: number;
+  height: number;
+  requireId?: number;
   timestamp?: number;
 }
 
-export interface LocalImages {
+export type LocalImages = {
   [key: string]: string[];
-} 
+}; 

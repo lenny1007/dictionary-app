@@ -14,43 +14,43 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function App() {
   return (
     <ErrorBoundary>
-      <SafeAreaProvider>
-        <NavigationContainer>
-          <Stack.Navigator
-            initialRouteName="Home"
-            screenOptions={{
-              headerStyle: {
-                backgroundColor: '#f4511e',
-              },
-              headerTintColor: '#fff',
-              headerTitleStyle: {
-                fontWeight: 'bold',
-              },
-            }}
-          >
-            <Stack.Screen 
-              name="Home" 
-              component={HomeScreen} 
-              options={{ title: 'Dictionary App' }}
-            />
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <Stack.Navigator
+          initialRouteName="Home"
+          screenOptions={{
+            headerStyle: {
+              backgroundColor: '#f4511e',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+          }}
+        >
+          <Stack.Screen 
+            name="Home" 
+            component={HomeScreen} 
+            options={{ title: 'Dictionary App' }}
+          />
             <Stack.Screen 
               name="Search" 
               component={SearchScreen} 
               options={{ title: 'Search' }}
             />
-            <Stack.Screen 
-              name="WordDetail" 
-              component={WordDetailScreen} 
-              options={{ title: 'Word Details' }}
-            />
-            <Stack.Screen 
-              name="Favorites" 
-              component={FavoritesScreen} 
-              options={{ title: 'Favorites' }}
-            />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </SafeAreaProvider>
+          <Stack.Screen 
+            name="WordDetail" 
+            component={WordDetailScreen} 
+            options={{ title: 'Word Details' }}
+          />
+          <Stack.Screen 
+            name="Favorites" 
+            component={FavoritesScreen} 
+            options={{ title: 'Favorites' }}
+          />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
     </ErrorBoundary>
   );
 }

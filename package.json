@@ -6,12 +6,13 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web",
-    "init-db": "ts-node scripts/initializeDatabase.ts"
+    "web": "node scripts/copyImages.js && expo start --web",
+    "init-db": "ts-node scripts/initializeDatabase.ts",
+    "copy-images": "node scripts/copyImages.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",
-    "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-native-async-storage/async-storage": "^1.23.1",
     "@react-navigation/native": "^7.1.6",
     "@react-navigation/native-stack": "^7.3.10",
     "@types/axios": "^0.9.36",

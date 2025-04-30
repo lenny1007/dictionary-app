@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
+import { DictionaryEntry } from '../types/dictionary';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -12,7 +13,13 @@ const HomeScreen = () => {
 
   const handleSearch = () => {
     if (searchWord.trim()) {
-      navigation.navigate('WordDetail', { word: searchWord.trim() });
+      // Create a basic DictionaryEntry object for navigation
+      const entry: DictionaryEntry = {
+        word: searchWord.trim(),
+        meanings: [],
+        translation: '',
+      };
+      navigation.navigate('WordDetail', { entry });
     }
   };
 
@@ -25,38 +32,40 @@ const HomeScreen = () => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.content}>
-        <Text style={styles.title}>Welcome to Word World! 🌈</Text>
-        <Text style={styles.subtitle}>Let's learn new words together!</Text>
-        
-        <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Type a word to search..."
-            placeholderTextColor="#999"
-            value={searchWord}
-            onChangeText={setSearchWord}
-            onSubmitEditing={handleSearch}
-            onFocus={handleSearchFocus}
-            returnKeyType="search"
-          />
-          <TouchableOpacity 
-            style={styles.searchButton}
-            onPress={handleSearch}
-          >
-            <Text style={styles.searchButtonText}>🔍</Text>
-          </TouchableOpacity>
-        </View>
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.content}>
+          <Text style={styles.title}>Welcome to Word World! 🌈</Text>
+          <Text style={styles.subtitle}>Let's learn new words together!</Text>
+          
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Type a word to search..."
+              placeholderTextColor="#999"
+              value={searchWord}
+              onChangeText={setSearchWord}
+              onSubmitEditing={handleSearch}
+              onFocus={handleSearchFocus}
+              returnKeyType="search"
+            />
+            <TouchableOpacity 
+              style={styles.searchButton}
+              onPress={handleSearch}
+            >
+              <Text style={styles.searchButtonText}>🔍</Text>
+            </TouchableOpacity>
+          </View>
 
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[styles.button, styles.favoritesButton]}
-            onPress={() => navigation.navigate('Favorites')}
-          >
-            <Text style={styles.buttonText}>⭐ My Favorite Words</Text>
-          </TouchableOpacity>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={[styles.button, styles.favoritesButton]}
+              onPress={() => navigation.navigate('Favorites')}
+            >
+              <Text style={styles.buttonText}>⭐ My Favorite Words</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 };
@@ -65,6 +74,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#E8F5E9', // Light green background
+  },
+  scrollView: {
+    flex: 1,
   },
   content: {
     flex: 1,
