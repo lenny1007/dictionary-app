@@ -110,7 +110,7 @@ export class SearchService {
 
     // Exact word match gets highest score
     if (this.normalizeText(entry.word) === normalizedQuery) {
-      score += 100;
+      score += 1000;
     }
     // Word starts with query
     else if (this.normalizeText(entry.word).startsWith(normalizedQuery)) {

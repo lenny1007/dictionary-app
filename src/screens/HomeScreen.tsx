@@ -64,6 +64,27 @@ const HomeScreen = () => {
               <Text style={styles.buttonText}>⭐ My Favorite Words</Text>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => navigation.navigate('Search')}
+          >
+            <Text style={styles.buttonText}>Search Dictionary</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => navigation.navigate('VoicetubeSearch')}
+          >
+            <Text style={styles.buttonText}>Search Voicetube Dictionary</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => navigation.navigate('YahooSearch')}
+          >
+            <Text style={styles.buttonText}>Search Yahoo Dictionary</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

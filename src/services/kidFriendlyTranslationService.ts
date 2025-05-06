@@ -259,3 +259,21 @@ function convertPinyinToZhuyin(pinyinSyllable: string): string {
 
   return result;
 }
+
+export async function getZhuyinPairsForChinese(text: string): Promise<CharacterZhuyinPair[]> {
+  // Process each character in the Chinese text
+  return Promise.all(
+    text.split('').map(async (char) => {
+      // Check if character is Chinese
+      const isChinese = /[\u4e00-\u9fff]/.test(char);
+      if (isChinese) {
+        // Get Zhuyin for Chinese characters
+        const zhuyin = await getZhuyinForCharacter(char);
+        return { character: char, zhuyin };
+      } else {
+        // For non-Chinese characters, keep them in the output but with empty zhuyin
+        return { character: char, zhuyin: '' };
+      }
+    })
+  );
+}

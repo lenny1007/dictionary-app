@@ -4,7 +4,7 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList, WordDetailParams } from '../types/navigation';
 import { DictionaryEntry, Meaning } from '../types/dictionary';
-import { translateForKids, TranslationResult as ServiceTranslationResult, CharacterZhuyinPair } from '../services/kidFriendlyTranslationService';
+import { translateForKids, TranslationResult as ServiceTranslationResult, CharacterZhuyinPair, getZhuyinPairsForChinese } from '../services/kidFriendlyTranslationService';
 import { Audio } from 'expo-av';
 import { translateToChinese } from '../services/translationService';
 import * as Speech from 'expo-speech';
@@ -14,7 +14,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import LoadingScreen from '../components/LoadingScreen';
 import { WordImageGallery } from '../components/WordImageGallery';
 import { imageService } from '../services/imageService';
-import { WordAIAssistant } from '../components/WordAIAssistant';
+// import { WordAIAssistant } from '../components/WordAIAssistant';
 
 type WordDetailScreenRouteProp = RouteProp<RootStackParamList, 'WordDetail'>;
 
@@ -113,6 +113,11 @@ const getImageSource = async (word: string) => {
   return { uri: `https://api.dictionaryapi.dev/media/pronunciations/${word.toLowerCase()}.png` };
 };
 
+function getZhuyinPairs(text: string): CharacterZhuyinPair[] {
+  // Placeholder: Replace with your actual Zhuyin annotation logic
+  return text.split('').map(char => ({ character: char, zhuyin: '' }));
+}
+
 const WordDetailScreen: React.FC = () => {
   const route = useRoute<WordDetailScreenRouteProp>();
   const navigation = useNavigation();
@@ -126,6 +131,8 @@ const WordDetailScreen: React.FC = () => {
   const [translating, setTranslating] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [definitionZhuyinPairs, setDefinitionZhuyinPairs] = useState<{ [key: string]: CharacterZhuyinPair[] }>({});
+  const [zhuyinLoading, setZhuyinLoading] = useState(false);
 
   const translateDefinition = async (definition: string): Promise<ServiceTranslationResult | null> => {
     try {
@@ -173,10 +180,26 @@ const WordDetailScreen: React.FC = () => {
     initializeAudio();
   }, []);
 
-    const translateContent = async () => {
-      setTranslating(true);
-      setTranslationError(null);
-    
+  useEffect(() => {
+    // Generate Zhuyin pairs for all definitions when entry changes
+    const generateZhuyinForDefinitions = async () => {
+      setZhuyinLoading(true);
+      const pairsMap: { [key: string]: CharacterZhuyinPair[] } = {};
+      for (const meaning of entry.meanings) {
+        for (const definition of meaning.definitions) {
+          pairsMap[definition] = await getZhuyinPairsForChinese(definition);
+        }
+      }
+      setDefinitionZhuyinPairs(pairsMap);
+      setZhuyinLoading(false);
+    };
+    generateZhuyinForDefinitions();
+  }, [entry]);
+
+  const translateContent = async () => {
+    setTranslating(true);
+    setTranslationError(null);
+  
     try {
       // Translate the word if it's not already in Chinese
       const wordTranslation = !entry.translation 
@@ -203,21 +226,21 @@ const WordDetailScreen: React.FC = () => {
       const examples = entry.meanings.flatMap((meaning: Meaning) => 
         meaning.examples || []
       );
-        const translatedExamples = await Promise.all(
+      const translatedExamples = await Promise.all(
         examples.map(translateDefinition)
-        );
+      );
 
-        setTranslations({
-          word: wordTranslation,
-          definitions: translatedDefinitions,
+      setTranslations({
+        word: wordTranslation,
+        definitions: translatedDefinitions,
         examples: translatedExamples.filter((t: ServiceTranslationResult | null): t is ServiceTranslationResult => t !== null)
-        });
-      } catch (err) {
+      });
+    } catch (err) {
       setTranslationError(err instanceof Error ? err.message : 'Translation failed');
-      } finally {
-        setTranslating(false);
-      }
-    };
+    } finally {
+      setTranslating(false);
+    }
+  };
 
   const checkFavoriteStatus = async () => {
     const storageService = StorageService.getInstance();
@@ -428,21 +451,19 @@ const WordDetailScreen: React.FC = () => {
               <Text style={styles.sectionTitle}>Meanings</Text>
               {entry.meanings.map((meaning: Meaning, meaningIndex: number) => (
                 <View key={meaningIndex} style={styles.meaningContainer}>
-            <Text style={styles.partOfSpeech}>{meaning.partOfSpeech}</Text>
+                  <Text style={styles.partOfSpeech}>{meaning.partOfSpeech}</Text>
                   {meaning.definitions.map((definition: string, defIndex: number) => (
                     <View key={defIndex} style={styles.definitionContainer}>
                       <View style={styles.textWithIcon}>
                         <TouchableOpacity 
-                          onPress={() => speakText(definition, 'en')}
+                          onPress={() => speakText(definition, 'zh')}
                           style={styles.textContainer}
                         >
-                          <Text style={styles.definitionText}>{definition}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          onPress={() => speakText(definition, 'en')}
-                          style={styles.iconButton}
-                        >
-                          <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
+                          {zhuyinLoading || !definitionZhuyinPairs[definition] ? (
+                            <ActivityIndicator size="small" color="#007AFF" />
+                          ) : (
+                            <ZhuyinText pairs={definitionZhuyinPairs[definition]} />
+                          )}
                         </TouchableOpacity>
                         <TouchableOpacity 
                           onPress={() => copyToClipboard(definition)}
@@ -451,26 +472,21 @@ const WordDetailScreen: React.FC = () => {
                           <Ionicons name="copy-outline" size={20} color="#666" />
                         </TouchableOpacity>
                       </View>
-                      {translations.definitions[meaningIndex]?.[defIndex] && 
-                        renderTranslation(translations.definitions[meaningIndex][defIndex], false, false)}
-          </View>
+                    </View>
                   ))}
+                  {meaning.examples && meaning.examples.length > 0 && (
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Examples</Text>
+                      {meaning.examples.map((example, exIdx) => (
+                        <View key={exIdx} style={styles.exampleContainer}>
+                          {translations.examples[exIdx] && renderTranslation(translations.examples[exIdx], true)}
+                        </View>
+                      ))}
+                    </View>
+                  )}
                 </View>
               ))}
-                  </View>
-
-            {translations.examples.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Examples</Text>
-                {translations.examples.map((example, index) => (
-                  <View key={index} style={styles.exampleContainer}>
-                    {renderTranslation(example, true)}
-                  </View>
-                ))}
-              </View>
-            )}
-
-            <WordAIAssistant word={entry.word} />
+            </View>
           </>
       )}
     </ScrollView>

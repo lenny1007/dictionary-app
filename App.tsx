@@ -6,6 +6,8 @@ import HomeScreen from './src/screens/HomeScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import WordDetailScreen from './src/screens/WordDetailScreen';
 import FavoritesScreen from './src/screens/FavoritesScreen';
+import VoicetubeSearchScreen from './src/screens/VoicetubeSearchScreen';
+import YahooSearchScreen from './src/screens/YahooSearchScreen';
 import { RootStackParamList } from './src/types/navigation';
 import ErrorBoundary from './src/components/ErrorBoundary';
 
@@ -47,6 +49,16 @@ export default function App() {
             name="Favorites" 
             component={FavoritesScreen} 
             options={{ title: 'Favorites' }}
+          />
+          <Stack.Screen 
+            name="VoicetubeSearch" 
+            component={VoicetubeSearchScreen} 
+            options={{ title: 'Voicetube Dictionary' }}
+          />
+          <Stack.Screen 
+            name="YahooSearch" 
+            component={YahooSearchScreen} 
+            options={{ title: 'Yahoo Dictionary' }}
           />
         </Stack.Navigator>
       </NavigationContainer>
