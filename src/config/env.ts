@@ -20,5 +20,6 @@ const getGoogleTranslateApiKey = () => {
 };
 
 export const ENV = {
-  GOOGLE_TRANSLATE_API_KEY: getGoogleTranslateApiKey()
+  GOOGLE_TRANSLATE_API_KEY: getGoogleTranslateApiKey(),
+  OPENAI_API_KEY: process.env.EXPO_PUBLIC_OPENAI_API_KEY
 }; 

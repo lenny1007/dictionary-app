@@ -14,6 +14,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import LoadingScreen from '../components/LoadingScreen';
 import { WordImageGallery } from '../components/WordImageGallery';
 import { imageService } from '../services/imageService';
+import { WordAIAssistant } from '../components/WordAIAssistant';
 
 type WordDetailScreenRouteProp = RouteProp<RootStackParamList, 'WordDetail'>;
 
@@ -464,10 +465,12 @@ const WordDetailScreen: React.FC = () => {
                 {translations.examples.map((example, index) => (
                   <View key={index} style={styles.exampleContainer}>
                     {renderTranslation(example, true)}
-        </View>
-      ))}
-        </View>
-      )}
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <WordAIAssistant word={entry.word} />
           </>
       )}
     </ScrollView>
