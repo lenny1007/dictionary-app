@@ -118,6 +118,12 @@ function getZhuyinPairs(text: string): CharacterZhuyinPair[] {
   return text.split('').map(char => ({ character: char, zhuyin: '' }));
 }
 
+// Utility function to check if a string is pure English
+function isPureEnglish(text: string): boolean {
+  // Matches only ASCII (English letters, numbers, punctuation, and whitespace)
+  return /^[\x00-\x7F]+$/.test(text.trim());
+}
+
 const WordDetailScreen: React.FC = () => {
   const route = useRoute<WordDetailScreenRouteProp>();
   const navigation = useNavigation();
@@ -196,10 +202,10 @@ const WordDetailScreen: React.FC = () => {
     generateZhuyinForDefinitions();
   }, [entry]);
 
-  const translateContent = async () => {
-    setTranslating(true);
-    setTranslationError(null);
-  
+    const translateContent = async () => {
+      setTranslating(true);
+      setTranslationError(null);
+    
     try {
       // Translate the word if it's not already in Chinese
       const wordTranslation = !entry.translation 
@@ -226,21 +232,21 @@ const WordDetailScreen: React.FC = () => {
       const examples = entry.meanings.flatMap((meaning: Meaning) => 
         meaning.examples || []
       );
-      const translatedExamples = await Promise.all(
+        const translatedExamples = await Promise.all(
         examples.map(translateDefinition)
-      );
+        );
 
-      setTranslations({
-        word: wordTranslation,
-        definitions: translatedDefinitions,
+        setTranslations({
+          word: wordTranslation,
+          definitions: translatedDefinitions,
         examples: translatedExamples.filter((t: ServiceTranslationResult | null): t is ServiceTranslationResult => t !== null)
-      });
-    } catch (err) {
+        });
+      } catch (err) {
       setTranslationError(err instanceof Error ? err.message : 'Translation failed');
-    } finally {
-      setTranslating(false);
-    }
-  };
+      } finally {
+        setTranslating(false);
+      }
+    };
 
   const checkFavoriteStatus = async () => {
     const storageService = StorageService.getInstance();
@@ -386,6 +392,8 @@ const WordDetailScreen: React.FC = () => {
     );
   }
 
+  let exampleGlobalIdx = 0;
+
   return (
     <ErrorBoundary>
     <ScrollView style={styles.container}>
@@ -451,39 +459,59 @@ const WordDetailScreen: React.FC = () => {
               <Text style={styles.sectionTitle}>Meanings</Text>
               {entry.meanings.map((meaning: Meaning, meaningIndex: number) => (
                 <View key={meaningIndex} style={styles.meaningContainer}>
-                  <Text style={styles.partOfSpeech}>{meaning.partOfSpeech}</Text>
+            <Text style={styles.partOfSpeech}>{meaning.partOfSpeech}</Text>
                   {meaning.definitions.map((definition: string, defIndex: number) => (
-                    <View key={defIndex} style={styles.definitionContainer}>
-                      <View style={styles.textWithIcon}>
-                        <TouchableOpacity 
-                          onPress={() => speakText(definition, 'zh')}
-                          style={styles.textContainer}
-                        >
-                          {zhuyinLoading || !definitionZhuyinPairs[definition] ? (
-                            <ActivityIndicator size="small" color="#007AFF" />
-                          ) : (
-                            <ZhuyinText pairs={definitionZhuyinPairs[definition]} />
-                          )}
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          onPress={() => copyToClipboard(definition)}
-                          style={styles.iconButton}
-                        >
-                          <Ionicons name="copy-outline" size={20} color="#666" />
-                        </TouchableOpacity>
+                    isPureEnglish(definition) ? (
+                      <View key={defIndex} style={[styles.definitionContainer, { backgroundColor: '#F8F9FA', borderLeftWidth: 0, padding: 12, borderRadius: 8 }]}> 
+                        <View style={[styles.textWithIcon, { justifyContent: 'space-between', alignItems: 'flex-start' }]}>
+                          <Text style={[styles.englishText, { flex: 1 }]}>{definition}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <TouchableOpacity 
+                              onPress={() => copyToClipboard(definition)}
+                              style={[styles.iconButton, { marginLeft: 8 }]}
+                            >
+                              <Ionicons name="copy-outline" size={20} color="#666" />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
                       </View>
-                    </View>
+                    ) : (
+                      <View key={defIndex} style={styles.definitionContainer}>
+                        <View style={styles.textWithIcon}>
+                          <TouchableOpacity 
+                            onPress={() => speakText(definition, 'zh')}
+                            style={styles.textContainer}
+                          >
+                            {zhuyinLoading || !definitionZhuyinPairs[definition] ? (
+                              <ActivityIndicator size="small" color="#007AFF" />
+                            ) : (
+                              <ZhuyinText pairs={definitionZhuyinPairs[definition]} />
+                            )}
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            onPress={() => copyToClipboard(definition)}
+                            style={styles.iconButton}
+                          >
+                            <Ionicons name="copy-outline" size={20} color="#666" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )
                   ))}
                   {meaning.examples && meaning.examples.length > 0 && (
-                    <View style={styles.section}>
-                      <Text style={styles.sectionTitle}>Examples</Text>
-                      {meaning.examples.map((example, exIdx) => (
-                        <View key={exIdx} style={styles.exampleContainer}>
-                          {translations.examples[exIdx] && renderTranslation(translations.examples[exIdx], true)}
-                        </View>
-                      ))}
-                    </View>
-                  )}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Examples</Text>
+                      {meaning.examples.map((example, exIdx) => {
+                        const translation = translations.examples[exampleGlobalIdx];
+                        exampleGlobalIdx++;
+                        return (
+                          <View key={exIdx} style={styles.exampleContainer}>
+                            {translation && renderTranslation(translation, true)}
+                          </View>
+                        );
+                      })}
+              </View>
+            )}
                 </View>
               ))}
             </View>
@@ -634,6 +662,7 @@ const styles = StyleSheet.create({
     color: '#2D3436',
     marginRight: 8,
     lineHeight: 24,
+    fontStyle: 'italic',
   },
   translationText: {
     fontSize: 16,
@@ -655,6 +684,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
+    width: '100%',
   },
   zhuyinContainer: {
     marginTop: 0,

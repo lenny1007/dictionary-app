@@ -3,13 +3,14 @@ import { DictionaryEntry, Meaning } from '../types/dictionary';
 interface TrieNode {
   children: { [key: string]: TrieNode };
   isEndOfWord: boolean;
-  entries: DictionaryEntry[];
+  entries: { [dictionaryId: string]: DictionaryEntry[] };
 }
 
 export class TrieService {
   private static instance: TrieService;
   private root: TrieNode;
   private isInitialized: boolean = false;
+  private currentDictionaryId: string | null = null;
 
   private constructor() {
     this.root = this.createNode();
@@ -26,13 +27,13 @@ export class TrieService {
     return {
       children: {},
       isEndOfWord: false,
-      entries: []
+      entries: {}
     };
   }
 
-  public async initialize(dictionary: DictionaryEntry[]): Promise<void> {
-    if (this.isInitialized) return;
-
+  public async initialize(dictionary: DictionaryEntry[], dictionaryId: string): Promise<void> {
+    this.currentDictionaryId = dictionaryId;
+    
     try {
       for (const entry of dictionary) {
         this.insert(entry.word.toLowerCase(), entry);
@@ -57,6 +58,10 @@ export class TrieService {
   }
 
   private insert(word: string, entry: DictionaryEntry): void {
+    if (!this.currentDictionaryId) {
+      throw new Error('Dictionary ID not set');
+    }
+
     let node = this.root;
     
     for (const char of word) {
@@ -67,12 +72,15 @@ export class TrieService {
     }
     
     node.isEndOfWord = true;
-    if (!node.entries.includes(entry)) {
-      node.entries.push(entry);
+    if (!node.entries[this.currentDictionaryId]) {
+      node.entries[this.currentDictionaryId] = [];
+    }
+    if (!node.entries[this.currentDictionaryId].includes(entry)) {
+      node.entries[this.currentDictionaryId].push(entry);
     }
   }
 
-  public search(prefix: string): DictionaryEntry[] {
+  public search(prefix: string, dictionaryId: string): DictionaryEntry[] {
     const normalizedPrefix = prefix.toLowerCase();
     let node = this.root;
     
@@ -84,21 +92,21 @@ export class TrieService {
       node = node.children[char];
     }
     
-    // Collect all entries from this node and its children
-    return this.collectAllEntries(node);
+    // Collect all entries from this node and its children for the specific dictionary
+    return this.collectAllEntries(node, dictionaryId);
   }
 
-  private collectAllEntries(node: TrieNode): DictionaryEntry[] {
-    const entries: DictionaryEntry[] = [...node.entries];
+  private collectAllEntries(node: TrieNode, dictionaryId: string): DictionaryEntry[] {
+    const entries: DictionaryEntry[] = [...(node.entries[dictionaryId] || [])];
     
     for (const child of Object.values(node.children)) {
-      entries.push(...this.collectAllEntries(child));
+      entries.push(...this.collectAllEntries(child, dictionaryId));
     }
     
     return entries;
   }
 
-  public fuzzySearch(query: string, maxDistance: number = 2): DictionaryEntry[] {
+  public fuzzySearch(query: string, dictionaryId: string, maxDistance: number = 2): DictionaryEntry[] {
     const results: DictionaryEntry[] = [];
     const normalizedQuery = query.toLowerCase();
     
@@ -108,7 +116,7 @@ export class TrieService {
       if (node.isEndOfWord) {
         const distance = this.levenshteinDistance(currentWord, normalizedQuery);
         if (distance <= maxDistance) {
-          results.push(...node.entries);
+          results.push(...(node.entries[dictionaryId] || []));
         }
       }
       

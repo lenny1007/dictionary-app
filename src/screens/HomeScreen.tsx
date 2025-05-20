@@ -85,6 +85,13 @@ const HomeScreen = () => {
           >
             <Text style={styles.buttonText}>Search Yahoo Dictionary</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => navigation.navigate('CambridgeSearch')}
+          >
+            <Text style={styles.buttonText}>Search Cambridge Dictionary</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

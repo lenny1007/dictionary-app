@@ -12,6 +12,7 @@ export type RootStackParamList = {
   Favorites: undefined;
   VoicetubeSearch: undefined;
   YahooSearch: undefined;
+  CambridgeSearch: undefined;
 }; 
 
 export type RootStackNavigationProp = NativeStackNavigationProp<RootStackParamList>; 

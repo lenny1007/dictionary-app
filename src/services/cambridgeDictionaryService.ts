@@ -2,18 +2,18 @@ import { DictionaryEntry } from '../types/dictionary';
 import { CacheService } from './cacheService';
 import { TrieService } from './trieService';
 
-export class VoicetubeDictionaryService {
-  private static instance: VoicetubeDictionaryService;
+export class CambridgeDictionaryService {
+  private static instance: CambridgeDictionaryService;
   private dictionary: DictionaryEntry[] = [];
   private isInitialized = false;
   private cacheService: CacheService;
   private trieService: TrieService;
-  private readonly DICTIONARY_CACHE_KEY = 'voicetube_dictionary_data';
-  private readonly DICTIONARY_ID = 'voicetube';
+  private readonly DICTIONARY_CACHE_KEY = 'cambridge_dictionary_data';
+  private readonly DICTIONARY_ID = 'cambridge';
 
   private constructor() {
     this.cacheService = CacheService.getInstance({
-      key: '@voicetube_dictionary_cache',
+      key: '@cambridge_dictionary_cache',
       ttl: 24 * 60 * 60 * 1000, // 24 hours
       maxSize: 1000,
       maxTotalSize: 5000
@@ -21,11 +21,11 @@ export class VoicetubeDictionaryService {
     this.trieService = TrieService.getInstance();
   }
 
-  public static getInstance(): VoicetubeDictionaryService {
-    if (!VoicetubeDictionaryService.instance) {
-      VoicetubeDictionaryService.instance = new VoicetubeDictionaryService();
+  public static getInstance(): CambridgeDictionaryService {
+    if (!CambridgeDictionaryService.instance) {
+      CambridgeDictionaryService.instance = new CambridgeDictionaryService();
     }
-    return VoicetubeDictionaryService.instance;
+    return CambridgeDictionaryService.instance;
   }
 
   public async initialize(): Promise<void> {
@@ -42,7 +42,7 @@ export class VoicetubeDictionaryService {
       }
 
       // If not in cache, load from file
-      const rawDictionary = require('../../assets/voicetube_dic_zh.json');
+      const rawDictionary = require('../../assets/cambridge_dic_zh_en.json');
       // Transform the raw dictionary data to match our DictionaryEntry type
       this.dictionary = rawDictionary.map((entry: any) => {
         try {
@@ -51,21 +51,60 @@ export class VoicetubeDictionaryService {
             return null;
           }
 
+          let allTranslations: string[] = [];
+
+          // Handle the new Cambridge dictionary format
+          const meanings = entry.meanings?.map((meaning: any) => {
+            const definitions: string[] = [];
+            const translations: string[] = [];
+            const examples: string[] = [];
+
+            // Process definitions and translations
+            meaning.definition?.forEach((defGroup: any) => {
+              if (Array.isArray(defGroup)) {
+                defGroup.forEach((def: any) => {
+                  if (Array.isArray(def)) {
+                    // English definition is usually the first element
+                    if (def[0]) definitions.push(def[0]);
+                    // Chinese translation is usually the second element
+                    if (def[1]) {
+                      translations.push(def[1]);
+                      allTranslations.push(def[1]);
+                    }
+                  }
+                });
+              }
+            });
+
+            // Process examples
+            meaning.examples?.forEach((exampleGroup: any) => {
+              if (Array.isArray(exampleGroup)) {
+                exampleGroup.forEach((example: any) => {
+                  if (typeof example === 'string') {
+                    examples.push(example);
+                  }
+                });
+              }
+            });
+
+            return {
+              partOfSpeech: meaning.part_of_speech || 'word',
+              definitions: definitions.length > 0 ? definitions : ['暂无中文释义'],
+              examples: examples,
+              level: meaning.level?.[0] || null
+            };
+          }) || [{
+            partOfSpeech: 'word',
+            definitions: ['暂无中文释义'],
+            examples: []
+          }];
+
           return {
             word: entry.word,
-            phonetic: Array.isArray(entry.phonetic) ? entry.phonetic.join('; ') : (entry.phonetic || ''),
-            meanings: Array.isArray(entry.meanings)
-              ? entry.meanings.map((meaning: any) => ({
-                  partOfSpeech: meaning.partOfSpeech || 'word',
-                  definitions: [meaning.definition || '暂无中文释义'],
-                  examples: entry.sentences || []
-                }))
-              : [{
-                  partOfSpeech: 'word',
-                  definitions: ['暂无中文释义'],
-                  examples: entry.sentences || []
-                }],
-            translation: entry.translation || ''
+            phonetic: entry.phonics || '',
+            meanings: meanings,
+            translation: allTranslations.join('; ') || '',
+            audioSrc: entry.audio_src || null
           };
         } catch (error) {
           console.error('Error transforming dictionary entry:', error, entry);
@@ -78,8 +117,8 @@ export class VoicetubeDictionaryService {
       await this.trieService.initialize(this.dictionary, this.DICTIONARY_ID);
       this.isInitialized = true;
     } catch (error) {
-      console.error('Error initializing voicetube dictionary:', error);
-      throw new Error('Failed to load voicetube dictionary');
+      console.error('Error initializing cambridge dictionary:', error);
+      throw new Error('Failed to load cambridge dictionary');
     }
   }
 

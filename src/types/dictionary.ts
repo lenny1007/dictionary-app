@@ -1,7 +1,8 @@
 export interface Meaning {
   partOfSpeech: string;
   definitions: string[];
-  examples?: string[];
+  examples: string[];
+  level?: string | null;
 }
 
 export interface DictionaryEntry {
@@ -11,4 +12,5 @@ export interface DictionaryEntry {
   translation: string;
   zhuyin?: string;
   pinyin?: string;
+  audioSrc?: string | null;
 } 

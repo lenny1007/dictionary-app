@@ -28,12 +28,14 @@ export class SearchService {
   private trieService: TrieService;
   private readonly DICTIONARY_CACHE_KEY = 'dictionary_data';
   private readonly SEARCH_RESULT_CACHE_KEY = 'search_results';
+  private readonly DICTIONARY_ID = 'main';
 
   private constructor() {
     this.cacheService = CacheService.getInstance({
       key: '@dictionary_cache',
       ttl: 24 * 60 * 60 * 1000, // 24 hours
-      maxSize: 1000
+      maxSize: 1000,
+      maxTotalSize: 5000
     });
     this.trieService = TrieService.getInstance();
   }
@@ -53,7 +55,7 @@ export class SearchService {
       const cachedDictionary = await this.cacheService.get<DictionaryEntry[]>(this.DICTIONARY_CACHE_KEY);
       if (cachedDictionary) {
         this.dictionary = cachedDictionary;
-        await this.trieService.initialize(this.dictionary);
+        await this.trieService.initialize(this.dictionary, this.DICTIONARY_ID);
         this.isInitialized = true;
         return;
       }
@@ -92,7 +94,7 @@ export class SearchService {
 
       // Cache the dictionary data
       await this.cacheService.set(this.DICTIONARY_CACHE_KEY, this.dictionary);
-      await this.trieService.initialize(this.dictionary);
+      await this.trieService.initialize(this.dictionary, this.DICTIONARY_ID);
       this.isInitialized = true;
     } catch (error) {
       console.error('Error initializing dictionary:', error);
@@ -174,11 +176,11 @@ export class SearchService {
       results = cachedResults;
     } else {
       // Use trie for initial search
-      const trieResults = this.trieService.search(normalizedQuery);
+      const trieResults = this.trieService.search(normalizedQuery, this.DICTIONARY_ID);
       
       // If no results from trie, try fuzzy search
       if (trieResults.length === 0) {
-        results = this.trieService.fuzzySearch(normalizedQuery);
+        results = this.trieService.fuzzySearch(normalizedQuery, this.DICTIONARY_ID);
       } else {
         results = trieResults;
       }
@@ -231,7 +233,7 @@ export class SearchService {
     }
 
     // Use trie for suggestions
-    const suggestions = this.trieService.search(normalizedQuery).slice(0, 5);
+    const suggestions = this.trieService.search(normalizedQuery, this.DICTIONARY_ID).slice(0, 5);
 
     // Cache the suggestions
     await this.cacheService.set(cacheKey, suggestions);

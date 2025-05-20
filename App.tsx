@@ -8,6 +8,7 @@ import WordDetailScreen from './src/screens/WordDetailScreen';
 import FavoritesScreen from './src/screens/FavoritesScreen';
 import VoicetubeSearchScreen from './src/screens/VoicetubeSearchScreen';
 import YahooSearchScreen from './src/screens/YahooSearchScreen';
+import CambridgeSearchScreen from './src/screens/CambridgeSearchScreen';
 import { RootStackParamList } from './src/types/navigation';
 import ErrorBoundary from './src/components/ErrorBoundary';
 
@@ -59,6 +60,11 @@ export default function App() {
             name="YahooSearch" 
             component={YahooSearchScreen} 
             options={{ title: 'Yahoo Dictionary' }}
+          />
+          <Stack.Screen 
+            name="CambridgeSearch" 
+            component={CambridgeSearchScreen} 
+            options={{ title: 'Cambridge Dictionary' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

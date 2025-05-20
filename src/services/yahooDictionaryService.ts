@@ -9,6 +9,7 @@ export class YahooDictionaryService {
   private cacheService: CacheService;
   private trieService: TrieService;
   private readonly DICTIONARY_CACHE_KEY = 'yahoo_dictionary_data';
+  private readonly DICTIONARY_ID = 'yahoo';
 
   private constructor() {
     this.cacheService = CacheService.getInstance({
@@ -35,7 +36,7 @@ export class YahooDictionaryService {
       const cachedDictionary = await this.cacheService.get<DictionaryEntry[]>(this.DICTIONARY_CACHE_KEY);
       if (cachedDictionary) {
         this.dictionary = cachedDictionary;
-        await this.trieService.initialize(this.dictionary);
+        await this.trieService.initialize(this.dictionary, this.DICTIONARY_ID);
         this.isInitialized = true;
         return;
       }
@@ -74,7 +75,7 @@ export class YahooDictionaryService {
 
       // Cache the dictionary data
       await this.cacheService.set(this.DICTIONARY_CACHE_KEY, this.dictionary);
-      await this.trieService.initialize(this.dictionary);
+      await this.trieService.initialize(this.dictionary, this.DICTIONARY_ID);
       this.isInitialized = true;
     } catch (error) {
       console.error('Error initializing yahoo dictionary:', error);
@@ -93,11 +94,11 @@ export class YahooDictionaryService {
     }
 
     // Use trie for initial search
-    let results = this.trieService.search(normalizedQuery);
+    let results = this.trieService.search(normalizedQuery, this.DICTIONARY_ID);
     
     // If no results from trie, try fuzzy search
     if (results.length === 0) {
-      results = this.trieService.fuzzySearch(normalizedQuery);
+      results = this.trieService.fuzzySearch(normalizedQuery, this.DICTIONARY_ID);
     }
 
     // Sort results by match score (reuse logic from voicetube)
