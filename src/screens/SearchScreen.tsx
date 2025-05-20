@@ -14,6 +14,9 @@ import { SearchService } from '../services/searchService';
 import { StorageService } from '../services/storageService';
 import { DictionaryEntry } from '../types/dictionary';
 import { RootStackParamList } from '../types/navigation';
+import { VoicetubeDictionaryService } from '../services/voicetubeDictionaryService';
+import { YahooDictionaryService } from '../services/yahooDictionaryService';
+import { CambridgeDictionaryService } from '../services/cambridgeDictionaryService';
 
 type SearchScreenNavigationProp = NavigationProp<RootStackParamList>;
 
@@ -43,6 +46,48 @@ const SearchScreen: React.FC = () => {
     setFavorites(favs);
   };
 
+  const calculateRelevanceScore = (entry: DictionaryEntry, searchQuery: string): number => {
+    const query = searchQuery.toLowerCase();
+    let score = 0;
+
+    // Exact word match gets highest score
+    if (entry.word.toLowerCase() === query) {
+      score += 1000;
+    }
+    // Word starts with query
+    else if (entry.word.toLowerCase().startsWith(query)) {
+      score += 500;
+    }
+    // Word contains query
+    else if (entry.word.toLowerCase().includes(query)) {
+      score += 250;
+    }
+
+    // Check definitions
+    for (const meaning of entry.meanings) {
+      for (const definition of meaning.definitions) {
+        if (definition.toLowerCase().includes(query)) {
+          score += 100;
+        }
+      }
+      // Check examples
+      if (meaning.examples) {
+        for (const example of meaning.examples) {
+          if (example.toLowerCase().includes(query)) {
+            score += 50;
+          }
+        }
+      }
+    }
+
+    // Check translation if available
+    if (entry.translation && entry.translation.toLowerCase().includes(query)) {
+      score += 150;
+    }
+
+    return score;
+  };
+
   const handleSearch = async (text: string) => {
     setQuery(text);
     if (text.length < 2) {
@@ -54,8 +99,64 @@ const SearchScreen: React.FC = () => {
     setLoading(true);
     setShowRecent(false);
     try {
-      const searchResults = await SearchService.getInstance().search(text);
-      setResults(searchResults.items);
+      // Search in all dictionaries, use a large page size for GPT/main dictionary
+      const [gptResults, voicetubeResults, yahooResults, cambridgeResults] = await Promise.all([
+        SearchService.getInstance().search(text, 1, 100),
+        VoicetubeDictionaryService.getInstance().search(text),
+        YahooDictionaryService.getInstance().search(text),
+        CambridgeDictionaryService.getInstance().search(text)
+      ]);
+
+      // Helper to tag entries with their source
+      const tagSource = (entries: DictionaryEntry[] | undefined, source: string): (DictionaryEntry & { _source: string })[] =>
+        (entries || []).map((e: DictionaryEntry) => ({ ...e, _source: source }));
+
+      // For each source, keep only one entry per word
+      const uniqueByWord = (entries: (DictionaryEntry & { _source: string })[]): (DictionaryEntry & { _source: string })[] => {
+        const seen = new Set<string>();
+        return entries.filter((e) => {
+          if (seen.has(e.word)) return false;
+          seen.add(e.word);
+          return true;
+        });
+      };
+
+      const lowerQuery = text.toLowerCase();
+      // Find exact matches in each source (search the full result arrays)
+      const gptExact = (gptResults.items || []).find(e => e.word.toLowerCase() === lowerQuery);
+      const voicetubeExact = (voicetubeResults || []).find(e => e.word.toLowerCase() === lowerQuery);
+      const yahooExact = (yahooResults || []).find(e => e.word.toLowerCase() === lowerQuery);
+      const cambridgeExact = (cambridgeResults || []).find(e => e.word.toLowerCase() === lowerQuery);
+
+      // Tag and collect all exact matches (one per source, if found)
+      const exactMatches: (DictionaryEntry & { _source: string })[] = [];
+      if (gptExact) exactMatches.push({ ...gptExact, _source: 'GPT' });
+      if (voicetubeExact) exactMatches.push({ ...voicetubeExact, _source: 'Voicetube' });
+      if (yahooExact) exactMatches.push({ ...yahooExact, _source: 'Yahoo' });
+      if (cambridgeExact) exactMatches.push({ ...cambridgeExact, _source: 'Cambridge' });
+
+      // Tag all results
+      const allResults = [
+        ...tagSource(gptResults.items, 'GPT'),
+        ...tagSource(voicetubeResults, 'Voicetube'),
+        ...tagSource(yahooResults, 'Yahoo'),
+        ...tagSource(cambridgeResults, 'Cambridge'),
+      ];
+
+      // Remove any (source, word) already in exactMatches
+      const shownKeys = new Set(exactMatches.map(e => `${e._source}::${e.word.toLowerCase()}`));
+      const nonExactMatches = allResults.filter(e => !shownKeys.has(`${e._source}::${e.word.toLowerCase()}`));
+
+      // Sort non-exact matches by relevance
+      const sortedNonExact = nonExactMatches
+        .map(entry => ({
+          entry,
+          score: calculateRelevanceScore(entry, text)
+        }))
+        .sort((a, b) => b.score - a.score)
+        .map(item => item.entry);
+
+      setResults([...exactMatches, ...sortedNonExact]);
     } catch (error) {
       console.error('Search error:', error);
     } finally {

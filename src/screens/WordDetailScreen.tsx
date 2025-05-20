@@ -467,6 +467,12 @@ const WordDetailScreen: React.FC = () => {
                           <Text style={[styles.englishText, { flex: 1 }]}>{definition}</Text>
                           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <TouchableOpacity 
+                              onPress={() => speakText(definition, 'en')}
+                              style={styles.iconButton}
+                            >
+                              <Ionicons name="volume-medium-outline" size={20} color="#2D3436" />
+                            </TouchableOpacity>
+                            <TouchableOpacity 
                               onPress={() => copyToClipboard(definition)}
                               style={[styles.iconButton, { marginLeft: 8 }]}
                             >
